@@ -17,9 +17,14 @@ if (!defined('ABSPATH')) exit;
 class HGEZLPFCR_Pro_License_Manager {
 
 	/**
-	 * API Base URL (schimbă cu URL-ul tău)
+	 * API Base URL
 	 */
-	const API_BASE_URL = 'https://your-api-domain.com/';
+	const API_BASE_URL = 'https://web-production-c8792.up.railway.app/api/v1/';
+
+	/**
+	 * Product ID for this plugin
+	 */
+	const PRODUCT_ID = 'hge-zone-livrare-fan-courier-pro';
 
 	/**
 	 * Cache duration (12 hours)
@@ -158,7 +163,7 @@ class HGEZLPFCR_Pro_License_Manager {
 								printf(
 									/* translators: %s: purchase URL */
 									esc_html__('Don\'t have a license? %s', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
-									'<a href="https://your-website.com/pricing" target="_blank">' . esc_html__('Purchase one here', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</a>'
+									'<a href="https://web-production-c8792.up.railway.app/checkout.html" target="_blank">' . esc_html__('Purchase one here', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</a>'
 								);
 								?>
 							</p>
@@ -380,8 +385,10 @@ class HGEZLPFCR_Pro_License_Manager {
 			'timeout' => 15,
 			'body'    => wp_json_encode([
 				'license_key' => $license_key,
-				'domain'      => self::get_domain(),
-				'email'       => get_option('admin_email'),
+				'product_id'  => self::PRODUCT_ID,
+				'site_url'    => site_url(),
+				'site_name'   => get_bloginfo('name'),
+				'ip_address'  => self::get_server_ip(),
 			]),
 			'headers' => [
 				'Content-Type' => 'application/json',
@@ -397,7 +404,7 @@ class HGEZLPFCR_Pro_License_Manager {
 		$body = json_decode(wp_remote_retrieve_body($response), true);
 
 		if ($code !== 200 || !isset($body['success']) || !$body['success']) {
-			$error_message = $body['error'] ?? __('Unknown error', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+			$error_message = $body['message'] ?? __('Unknown error', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
 			HGEZLPFCR_Logger::error('License activation rejected', ['error' => $error_message]);
 			return new WP_Error('activation_failed', $error_message);
 		}
@@ -405,7 +412,7 @@ class HGEZLPFCR_Pro_License_Manager {
 		// Save license data
 		update_option('hgezlpfcr_pro_license_key', $license_key);
 		update_option('hgezlpfcr_pro_license_status', 'active');
-		update_option('hgezlpfcr_pro_license_data', $body['data']);
+		update_option('hgezlpfcr_pro_license_data', $body['license_data'] ?? []);
 		delete_transient('hgezlpfcr_pro_license_check');
 
 		HGEZLPFCR_Logger::log('License activated successfully', ['license_key' => substr($license_key, 0, 8) . '...']);
@@ -427,7 +434,8 @@ class HGEZLPFCR_Pro_License_Manager {
 			'timeout' => 15,
 			'body'    => wp_json_encode([
 				'license_key' => $license_key,
-				'domain'      => self::get_domain(),
+				'product_id'  => self::PRODUCT_ID,
+				'site_url'    => site_url(),
 			]),
 			'headers' => [
 				'Content-Type' => 'application/json',
@@ -468,12 +476,13 @@ class HGEZLPFCR_Pro_License_Manager {
 			}
 		}
 
-		// Verify with API
-		$response = wp_remote_post(self::API_BASE_URL . 'verify', [
+		// Verify with API (uses /check endpoint)
+		$response = wp_remote_post(self::API_BASE_URL . 'check', [
 			'timeout' => 15,
 			'body'    => wp_json_encode([
 				'license_key' => $license_key,
-				'domain'      => self::get_domain(),
+				'product_id'  => self::PRODUCT_ID,
+				'site_url'    => site_url(),
 			]),
 			'headers' => [
 				'Content-Type' => 'application/json',
@@ -491,12 +500,12 @@ class HGEZLPFCR_Pro_License_Manager {
 		$code = wp_remote_retrieve_response_code($response);
 		$body = json_decode(wp_remote_retrieve_body($response), true);
 
-		$is_valid = $code === 200 && isset($body['success']) && $body['success'] && isset($body['data']['status']) && $body['data']['status'] === 'active';
+		$is_valid = $code === 200 && isset($body['success']) && $body['success'] && isset($body['license_data']['status']) && $body['license_data']['status'] === 'active';
 
 		if ($is_valid) {
 			// Update license data
 			update_option('hgezlpfcr_pro_license_status', 'active');
-			update_option('hgezlpfcr_pro_license_data', $body['data']);
+			update_option('hgezlpfcr_pro_license_data', $body['license_data']);
 			set_transient('hgezlpfcr_pro_license_check', 'active', self::CACHE_DURATION);
 			return true;
 		} else {
@@ -504,7 +513,7 @@ class HGEZLPFCR_Pro_License_Manager {
 			update_option('hgezlpfcr_pro_license_status', 'inactive');
 			set_transient('hgezlpfcr_pro_license_check', 'invalid', self::CACHE_DURATION);
 
-			$error_message = $body['error'] ?? __('License is invalid or expired', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+			$error_message = $body['message'] ?? __('License is invalid or expired', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
 			return new WP_Error('invalid_license', $error_message);
 		}
 	}
@@ -579,7 +588,7 @@ class HGEZLPFCR_Pro_License_Manager {
 							esc_html($days_remaining)
 						);
 						?>
-						<a href="https://your-website.com/renew" target="_blank" class="button button-primary" style="margin-left: 10px;">
+						<a href="https://web-production-c8792.up.railway.app/checkout.html" target="_blank" class="button button-primary" style="margin-left: 10px;">
 							<?php esc_html_e('Renew License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
 						</a>
 					</p>
@@ -590,15 +599,17 @@ class HGEZLPFCR_Pro_License_Manager {
 	}
 
 	/**
-	 * Get sanitized domain
+	 * Get server IP address
 	 *
 	 * @return string
 	 */
-	private static function get_domain() {
-		$domain = site_url();
-		$domain = preg_replace('#^https?://#', '', $domain);
-		$domain = preg_replace('#^www\.#', '', $domain);
-		$domain = rtrim($domain, '/');
-		return strtolower($domain);
+	private static function get_server_ip() {
+		if (!empty($_SERVER['SERVER_ADDR'])) {
+			return sanitize_text_field(wp_unslash($_SERVER['SERVER_ADDR']));
+		}
+		if (!empty($_SERVER['LOCAL_ADDR'])) {
+			return sanitize_text_field(wp_unslash($_SERVER['LOCAL_ADDR']));
+		}
+		return '';
 	}
 }
