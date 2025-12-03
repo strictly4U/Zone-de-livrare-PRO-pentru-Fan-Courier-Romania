@@ -59,8 +59,8 @@ class HGEZLPFCR_Pro_License_Manager {
 	 * Initialize License Manager
 	 */
 	public static function init() {
-		// Add license settings page
-		add_action('admin_menu', [__CLASS__, 'add_license_page'], 99);
+		// License settings are now in WooCommerce > Settings > Fan Courier > PRO License
+		// No separate page needed
 
 		// Check license status daily
 		add_action('admin_init', [__CLASS__, 'maybe_check_license']);
@@ -715,6 +715,13 @@ class HGEZLPFCR_Pro_License_Manager {
 			return;
 		}
 
+		// Don't show on the license settings page itself
+		if (isset($_GET['page']) && $_GET['page'] === 'wc-settings' &&
+		    isset($_GET['tab']) && $_GET['tab'] === 'hgezlpfcr' &&
+		    isset($_GET['section']) && $_GET['section'] === 'license') {
+			return;
+		}
+
 		$license_status = get_option('hgezlpfcr_pro_license_status', 'inactive');
 		$license_data = get_option('hgezlpfcr_pro_license_data', []);
 
@@ -740,7 +747,7 @@ class HGEZLPFCR_Pro_License_Manager {
 					<?php endif; ?>
 				</p>
 				<p>
-					<a href="<?php echo esc_url(admin_url('admin.php?page=hgezlpfcr-pro-license')); ?>" class="button button-primary">
+					<a href="<?php echo esc_url(admin_url('admin.php?page=wc-settings&tab=hgezlpfcr&section=license')); ?>" class="button button-primary">
 						<?php esc_html_e('View License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
 					</a>
 					<?php if ($suspension_reason === 'payment_failed'): ?>

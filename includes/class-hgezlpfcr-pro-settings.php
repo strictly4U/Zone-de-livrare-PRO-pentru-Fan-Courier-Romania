@@ -8,6 +8,9 @@ class HGEZLPFCR_Pro_Settings {
 
         // Add PRO settings for the PRO section
         add_filter('woocommerce_get_settings_hgezlpfcr', [__CLASS__, 'get_pro_settings'], 10, 2);
+
+        // Register custom field type for license HTML
+        add_action('woocommerce_admin_field_hgezlpfcr_pro_license_html', [__CLASS__, 'render_license_field']);
     }
 
     /**
@@ -17,11 +20,14 @@ class HGEZLPFCR_Pro_Settings {
      * @return array Modified sections with PRO added
      */
     public static function add_pro_section($sections) {
-        // Add PRO section
+        // Add License section first
+        $sections['license'] = __('PRO License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+
+        // Add PRO Automations section
         $sections['pro'] = __('PRO Automations', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
 
         if (class_exists('HGEZLPFCR_Logger')) {
-            HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Adding PRO section to FC tab', [
+            HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Adding PRO sections to FC tab', [
                 'sections' => array_keys($sections)
             ]);
         }
@@ -37,6 +43,11 @@ class HGEZLPFCR_Pro_Settings {
      * @return array Settings for current section
      */
     public static function get_pro_settings($settings, $current_section) {
+        // Handle License section
+        if ($current_section === 'license') {
+            return self::get_license_settings();
+        }
+
         // Only return PRO settings if we're in the PRO section
         if ($current_section !== 'pro') {
             return $settings;
@@ -255,5 +266,204 @@ class HGEZLPFCR_Pro_Settings {
      */
     public static function requires_invoice_for_auto_close() {
         return self::yes('hgezlpfcr_pro_auto_close_only_with_invoice');
+    }
+
+    /**
+     * Get License settings section
+     */
+    public static function get_license_settings() {
+        return [
+            [
+                'title' => __('HgE PRO License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'type' => 'title',
+                'desc' => '',
+                'id' => 'hgezlpfcr_pro_license_section'
+            ],
+            [
+                'type' => 'hgezlpfcr_pro_license_html',
+                'id' => 'hgezlpfcr_pro_license_field'
+            ],
+            [
+                'type' => 'sectionend',
+                'id' => 'hgezlpfcr_pro_license_section'
+            ],
+        ];
+    }
+
+    /**
+     * Render custom license HTML field
+     */
+    public static function render_license_field() {
+        $license_key = get_option('hgezlpfcr_pro_license_key', '');
+        $license_status = get_option('hgezlpfcr_pro_license_status', 'inactive');
+        $license_data = get_option('hgezlpfcr_pro_license_data', []);
+        $expires_at = $license_data['expires_at'] ?? null;
+
+        ?>
+        <tr valign="top">
+            <td colspan="2" style="padding: 0;">
+                <div class="hgezlpfcr-pro-license-wrapper" style="max-width: 800px;">
+                    <!-- License Status Card -->
+                    <div class="hgezlpfcr-license-status-card" style="background: <?php echo $license_status === 'active' ? '#d4edda' : '#f8d7da'; ?>; border: 1px solid <?php echo $license_status === 'active' ? '#c3e6cb' : '#f5c6cb'; ?>; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="margin: 0 0 10px 0; color: <?php echo $license_status === 'active' ? '#155724' : '#721c24'; ?>;">
+                            <?php if ($license_status === 'active'): ?>
+                                ✅ <?php esc_html_e('License Active', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                            <?php else: ?>
+                                ❌ <?php esc_html_e('License Inactive', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                            <?php endif; ?>
+                        </h3>
+
+                        <?php if ($license_status === 'active' && $expires_at): ?>
+                            <p style="margin: 5px 0; color: #666;">
+                                <strong><?php esc_html_e('Expires:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></strong>
+                                <?php echo esc_html(date_i18n(get_option('date_format'), strtotime($expires_at))); ?>
+                                <?php
+                                $days_remaining = floor((strtotime($expires_at) - time()) / DAY_IN_SECONDS);
+                                if ($days_remaining < 30 && $days_remaining > 0) {
+                                    echo '<span style="color: #d63638;"> (' . esc_html($days_remaining) . ' ' . esc_html__('days remaining', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . ')</span>';
+                                }
+                                ?>
+                            </p>
+                        <?php endif; ?>
+
+                        <?php if ($license_status === 'active'): ?>
+                            <p style="margin: 5px 0; color: #666;">
+                                <strong><?php esc_html_e('Domain:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></strong>
+                                <?php echo esc_html(site_url()); ?>
+                            </p>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- License Form -->
+                    <div style="background: #fff; border: 1px solid #c3c4c7; padding: 20px; border-radius: 4px;">
+                        <h3 style="margin-top: 0;"><?php esc_html_e('License Key', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></h3>
+
+                        <?php if ($license_status === 'active'): ?>
+                            <!-- Deactivate Form -->
+                            <form id="hgezlpfcr-deactivate-form" method="post">
+                                <?php wp_nonce_field('hgezlpfcr_pro_license_action', 'hgezlpfcr_pro_nonce'); ?>
+                                <p>
+                                    <input type="text" value="<?php echo esc_attr($license_key); ?>" class="regular-text" disabled readonly style="background: #f0f0f0; font-family: monospace;">
+                                </p>
+                                <p>
+                                    <button type="submit" class="button button-secondary" id="deactivate-license-btn">
+                                        <?php esc_html_e('Deactivate License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                                    </button>
+                                    <button type="button" class="button" id="check-license-btn">
+                                        <?php esc_html_e('Check Status', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                                    </button>
+                                </p>
+                            </form>
+                        <?php else: ?>
+                            <!-- Activate Form -->
+                            <form id="hgezlpfcr-activate-form" method="post">
+                                <?php wp_nonce_field('hgezlpfcr_pro_license_action', 'hgezlpfcr_pro_nonce'); ?>
+                                <p>
+                                    <label for="license_key"><strong><?php esc_html_e('Enter your license key:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></strong></label>
+                                </p>
+                                <p>
+                                    <input type="text" name="license_key" id="license_key" value="<?php echo esc_attr($license_key); ?>" class="regular-text" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" required style="font-family: monospace;">
+                                </p>
+                                <p>
+                                    <button type="submit" class="button button-primary" id="activate-license-btn">
+                                        <?php esc_html_e('Activate License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                                    </button>
+                                </p>
+                                <p class="description">
+                                    <?php
+                                    printf(
+                                        /* translators: %s: purchase URL */
+                                        esc_html__('Don\'t have a license? %s', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                                        '<a href="https://web-production-c8792.up.railway.app/checkout.html" target="_blank">' . esc_html__('Purchase one here', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</a>'
+                                    );
+                                    ?>
+                                </p>
+                            </form>
+                        <?php endif; ?>
+
+                        <!-- Response Message -->
+                        <div id="license-response-message" style="display: none; margin-top: 15px;"></div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+
+        <script>
+        jQuery(document).ready(function($) {
+            // Activate License
+            $('#hgezlpfcr-activate-form').on('submit', function(e) {
+                e.preventDefault();
+                var $btn = $('#activate-license-btn');
+                var $msg = $('#license-response-message');
+                var licenseKey = $('input[name="license_key"]').val();
+
+                $btn.prop('disabled', true).text('<?php esc_html_e('Activating...', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>');
+                $msg.hide();
+
+                $.post(ajaxurl, {
+                    action: 'hgezlpfcr_pro_activate_license',
+                    nonce: $('input[name="hgezlpfcr_pro_nonce"]').val(),
+                    license_key: licenseKey
+                }, function(response) {
+                    if (response.success) {
+                        $msg.html('<div class="notice notice-success inline"><p>' + response.data.message + '</p></div>').show();
+                        setTimeout(function() { location.reload(); }, 1500);
+                    } else {
+                        $msg.html('<div class="notice notice-error inline"><p>' + response.data.message + '</p></div>').show();
+                        $btn.prop('disabled', false).text('<?php esc_html_e('Activate License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>');
+                    }
+                });
+            });
+
+            // Deactivate License
+            $('#hgezlpfcr-deactivate-form').on('submit', function(e) {
+                e.preventDefault();
+                if (!confirm('<?php esc_html_e('Are you sure you want to deactivate this license?', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>')) return;
+
+                var $btn = $('#deactivate-license-btn');
+                var $msg = $('#license-response-message');
+
+                $btn.prop('disabled', true).text('<?php esc_html_e('Deactivating...', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>');
+                $msg.hide();
+
+                $.post(ajaxurl, {
+                    action: 'hgezlpfcr_pro_deactivate_license',
+                    nonce: $('input[name="hgezlpfcr_pro_nonce"]').val()
+                }, function(response) {
+                    if (response.success) {
+                        $msg.html('<div class="notice notice-success inline"><p>' + response.data.message + '</p></div>').show();
+                        setTimeout(function() { location.reload(); }, 1500);
+                    } else {
+                        $msg.html('<div class="notice notice-error inline"><p>' + response.data.message + '</p></div>').show();
+                        $btn.prop('disabled', false).text('<?php esc_html_e('Deactivate License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>');
+                    }
+                });
+            });
+
+            // Check License Status
+            $('#check-license-btn').on('click', function(e) {
+                e.preventDefault();
+                var $btn = $(this);
+                var $msg = $('#license-response-message');
+
+                $btn.prop('disabled', true).text('<?php esc_html_e('Checking...', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>');
+                $msg.hide();
+
+                $.post(ajaxurl, {
+                    action: 'hgezlpfcr_pro_check_license',
+                    nonce: $('input[name="hgezlpfcr_pro_nonce"]').val()
+                }, function(response) {
+                    if (response.success) {
+                        $msg.html('<div class="notice notice-success inline"><p>' + response.data.message + '</p></div>').show();
+                    } else {
+                        $msg.html('<div class="notice notice-error inline"><p>' + response.data.message + '</p></div>').show();
+                    }
+                    $btn.prop('disabled', false).text('<?php esc_html_e('Check Status', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>');
+                    setTimeout(function() { location.reload(); }, 2000);
+                });
+            });
+        });
+        </script>
+        <?php
     }
 }
