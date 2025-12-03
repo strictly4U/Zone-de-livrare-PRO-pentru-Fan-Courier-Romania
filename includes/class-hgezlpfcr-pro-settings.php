@@ -20,11 +20,11 @@ class HGEZLPFCR_Pro_Settings {
      * @return array Modified sections with PRO added
      */
     public static function add_pro_section($sections) {
-        // Add License section first
-        $sections['license'] = __('PRO License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
-
-        // Add PRO Automations section
+        // Add PRO Automations section first
         $sections['pro'] = __('PRO Automations', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+
+        // Add License section last
+        $sections['license'] = __('License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
 
         if (class_exists('HGEZLPFCR_Logger')) {
             HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Adding PRO sections to FC tab', [
@@ -274,7 +274,7 @@ class HGEZLPFCR_Pro_Settings {
     public static function get_license_settings() {
         return [
             [
-                'title' => __('HgE PRO License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'title' => __('License for HgE PRO: Advanced Automations for FAN Courier Romania', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
                 'type' => 'title',
                 'desc' => '',
                 'id' => 'hgezlpfcr_pro_license_section'
