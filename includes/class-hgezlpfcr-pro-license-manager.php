@@ -32,6 +32,17 @@ class HGEZLPFCR_Pro_License_Manager {
 	const CACHE_DURATION = 12 * HOUR_IN_SECONDS;
 
 	/**
+	 * Webhook secret option name
+	 * Set this in wp-config.php: define('HGEZLPFCR_WEBHOOK_SECRET', 'your-32-char-secret');
+	 */
+	const WEBHOOK_SECRET_OPTION = 'hgezlpfcr_pro_webhook_secret';
+
+	/**
+	 * Webhook signature time tolerance (5 minutes)
+	 */
+	const WEBHOOK_TIME_TOLERANCE = 300;
+
+	/**
 	 * Suspension reason labels (Romanian)
 	 */
 	const SUSPENSION_REASONS = [
@@ -80,6 +91,7 @@ class HGEZLPFCR_Pro_License_Manager {
 
 	/**
 	 * Handle incoming license webhook from server
+	 * Verifies HMAC-SHA256 signature if webhook secret is configured
 	 */
 	public static function handle_license_webhook(\WP_REST_Request $request) {
 		$payload = $request->get_json_params();
@@ -88,6 +100,40 @@ class HGEZLPFCR_Pro_License_Manager {
 		$webhook_header = $request->get_header('X-License-Webhook');
 		if ($webhook_header !== 'true') {
 			return new \WP_REST_Response(['success' => false, 'message' => 'Invalid webhook'], 401);
+		}
+
+		// Get webhook secret (from wp-config.php constant or option)
+		$webhook_secret = defined('HGEZLPFCR_WEBHOOK_SECRET')
+			? HGEZLPFCR_WEBHOOK_SECRET
+			: get_option(self::WEBHOOK_SECRET_OPTION, '');
+
+		// Verify signature if secret is configured
+		if (!empty($webhook_secret)) {
+			$signature = $request->get_header('X-Webhook-Signature');
+			$timestamp = $request->get_header('X-Webhook-Timestamp');
+
+			// Signature is required when secret is configured
+			if (empty($signature)) {
+				HGEZLPFCR_Logger::error('Webhook rejected: Missing signature');
+				return new \WP_REST_Response(['success' => false, 'message' => 'Missing signature'], 401);
+			}
+
+			// Verify timestamp to prevent replay attacks
+			if (!empty($timestamp)) {
+				$time_diff = abs(time() - intval($timestamp));
+				if ($time_diff > self::WEBHOOK_TIME_TOLERANCE) {
+					HGEZLPFCR_Logger::error('Webhook rejected: Timestamp expired', ['time_diff' => $time_diff]);
+					return new \WP_REST_Response(['success' => false, 'message' => 'Timestamp expired'], 401);
+				}
+			}
+
+			// Verify HMAC signature
+			if (!self::verify_webhook_signature($payload, $signature, $webhook_secret)) {
+				HGEZLPFCR_Logger::error('Webhook rejected: Invalid signature');
+				return new \WP_REST_Response(['success' => false, 'message' => 'Invalid signature'], 401);
+			}
+
+			HGEZLPFCR_Logger::log('Webhook signature verified successfully');
 		}
 
 		// Validate required fields
@@ -741,5 +787,22 @@ class HGEZLPFCR_Pro_License_Manager {
 			return sanitize_text_field(wp_unslash($_SERVER['LOCAL_ADDR']));
 		}
 		return '';
+	}
+
+	/**
+	 * Verify webhook HMAC-SHA256 signature
+	 *
+	 * @param array  $payload The webhook payload
+	 * @param string $signature The received signature (hex encoded)
+	 * @param string $secret The webhook secret
+	 * @return bool True if signature is valid
+	 */
+	private static function verify_webhook_signature($payload, $signature, $secret) {
+		// Calculate expected signature
+		$payload_json = wp_json_encode($payload);
+		$expected_signature = hash_hmac('sha256', $payload_json, $secret);
+
+		// Use timing-safe comparison
+		return hash_equals($expected_signature, $signature);
 	}
 }
