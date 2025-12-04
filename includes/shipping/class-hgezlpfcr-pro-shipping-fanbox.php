@@ -53,7 +53,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 	 * Get instance form fields specific to FANBox
 	 * Extends parent form fields with FANBox-specific options
 	 */
-	protected function get_instance_form_fields() {
+	public function get_instance_form_fields() {
 		$fields = parent::get_instance_form_fields();
 
 		// Customize title default

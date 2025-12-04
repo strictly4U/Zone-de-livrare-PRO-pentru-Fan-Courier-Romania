@@ -50,7 +50,7 @@ abstract class HGEZLPFCR_Pro_Shipping_Base extends WC_Shipping_Method {
     /**
      * Get instance form fields
      */
-    protected function get_instance_form_fields() {
+    public function get_instance_form_fields() {
         $fields = [
             'title' => [
                 'title'       => __('Checkout title', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),

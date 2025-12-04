@@ -26,7 +26,7 @@ class HGEZLPFCR_Pro_Shipping_CollectPointPayPoint extends HGEZLPFCR_Pro_Shipping
     /**
      * Get instance form fields - extends base with pickup point specific options
      */
-    protected function get_instance_form_fields() {
+    public function get_instance_form_fields() {
         $fields = parent::get_instance_form_fields();
 
         // Add pickup point specific field
