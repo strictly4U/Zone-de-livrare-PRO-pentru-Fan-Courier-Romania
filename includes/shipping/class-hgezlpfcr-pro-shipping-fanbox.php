@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) exit;
  *
  * Extends Abstract Base Class for FANBox locker delivery service
  */
-class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Abstract {
+class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 
 	/**
 	 * Service key for registry lookup

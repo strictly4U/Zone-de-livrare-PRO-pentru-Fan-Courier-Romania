@@ -682,13 +682,39 @@ class HGEZLPFCR_Pro_License_Manager {
 	}
 
 	/**
-	 * Check if has active license
+	 * Check if has active license (with API verification)
 	 *
 	 * @return bool
 	 */
 	public static function has_active_license() {
 		$result = self::verify_license();
 		return !is_wp_error($result);
+	}
+
+	/**
+	 * Quick check if license is active (local only, no API call)
+	 * Use this for frequent checks like in automation hooks
+	 *
+	 * @return bool
+	 */
+	public static function is_license_active() {
+		$status = get_option('hgezlpfcr_pro_license_status', 'inactive');
+
+		if ($status !== 'active') {
+			return false;
+		}
+
+		// Check if license has expired locally
+		$license_data = get_option('hgezlpfcr_pro_license_data', []);
+		$expires_at = $license_data['expires_at'] ?? null;
+
+		if ($expires_at && strtotime($expires_at) < time()) {
+			// License expired, update status
+			update_option('hgezlpfcr_pro_license_status', 'inactive');
+			return false;
+		}
+
+		return true;
 	}
 
 	/**

@@ -11,6 +11,49 @@ class HGEZLPFCR_Pro_Settings {
 
         // Register custom field type for license HTML
         add_action('woocommerce_admin_field_hgezlpfcr_pro_license_html', [__CLASS__, 'render_license_field']);
+
+        // Register custom field type for license required notice
+        add_action('woocommerce_admin_field_hgezlpfcr_pro_license_required', [__CLASS__, 'render_license_required_notice']);
+    }
+
+    /**
+     * Render license required notice for PRO Automations tab
+     */
+    public static function render_license_required_notice() {
+        $license_url = admin_url('admin.php?page=wc-settings&tab=hgezlpfcr&section=license');
+        ?>
+        <tr valign="top">
+            <td colspan="2" style="padding: 20px 0;">
+                <div style="background: #fff3cd; border: 1px solid #ffc107; border-left: 4px solid #ffc107; padding: 20px; border-radius: 4px; max-width: 800px;">
+                    <h3 style="margin: 0 0 15px 0; color: #856404;">
+                        🔒 <?php esc_html_e('License Required', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                    </h3>
+                    <p style="margin: 0 0 15px 0; color: #856404; font-size: 14px;">
+                        <?php esc_html_e('To use PRO Automations features (automatic AWB generation, automatic order completion), you need to activate a valid license.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                    </p>
+                    <p style="margin: 0;">
+                        <a href="<?php echo esc_url($license_url); ?>" class="button button-primary">
+                            <?php esc_html_e('Activate License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                        </a>
+                        <a href="https://web-production-c8792.up.railway.app/checkout.html" target="_blank" class="button button-secondary" style="margin-left: 10px;">
+                            <?php esc_html_e('Purchase License', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?>
+                        </a>
+                    </p>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 4px; max-width: 800px;">
+                    <h4 style="margin: 0 0 10px 0; color: #333;"><?php esc_html_e('PRO Features Include:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #666;">
+                        <li><?php esc_html_e('Automatic AWB generation when order status changes', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></li>
+                        <li><?php esc_html_e('Automatic order completion after AWB generation', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></li>
+                        <li><?php esc_html_e('SmartBill invoice integration', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></li>
+                        <li><?php esc_html_e('Asynchronous processing for better performance', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></li>
+                        <li><?php esc_html_e('Priority support', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'); ?></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+        <?php
     }
 
     /**
@@ -53,19 +96,44 @@ class HGEZLPFCR_Pro_Settings {
             return $settings;
         }
 
+        // Check if license is active
+        $license_active = class_exists('HGEZLPFCR_Pro_License_Manager') && HGEZLPFCR_Pro_License_Manager::is_license_active();
+
         // Debug logging
         if (class_exists('HGEZLPFCR_Logger')) {
             HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Loading PRO settings', [
-                'section' => $current_section
+                'section' => $current_section,
+                'license_active' => $license_active
             ]);
         }
 
-        // Return ONLY PRO settings for this section
+        // If license is not active, show activation required message
+        if (!$license_active) {
+            $license_url = admin_url('admin.php?page=wc-settings&tab=hgezlpfcr&section=license');
+            return [
+                [
+                    'title' => __('HgE PRO: Advanced Automations for FAN Courier Romania', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                    'type' => 'title',
+                    'desc' => '',
+                    'id' => 'hgezlpfcr_pro_section'
+                ],
+                [
+                    'type' => 'hgezlpfcr_pro_license_required',
+                    'id' => 'hgezlpfcr_pro_license_required_notice'
+                ],
+                [
+                    'type' => 'sectionend',
+                    'id' => 'hgezlpfcr_pro_section'
+                ]
+            ];
+        }
+
+        // Return ONLY PRO settings for this section (license is active)
         $pro_settings = [
             [
                 'title' => __('HgE PRO: Advanced Automations for FAN Courier Romania', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
                 'type' => 'title',
-                'desc' => 'Configure advanced automations for FAN Courier orders. These features require the HgE: Shipping Zones for FAN Courier Romania plugin to be active.',
+                'desc' => '✅ ' . __('License active. Configure advanced automations for FAN Courier orders.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
                 'id' => 'hgezlpfcr_pro_section'
             ],
 
@@ -178,6 +246,57 @@ class HGEZLPFCR_Pro_Settings {
                 'id' => 'hgezlpfcr_pro_execution_order_section'
             ],
             ['type' => 'sectionend', 'id' => 'hgezlpfcr_pro_execution_order_section'],
+
+            // SECTION 5: PRO Shipping Services
+            [
+                'title' => __('PRO Shipping Services', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'type' => 'title',
+                'desc' => __('Enable additional FAN Courier shipping services. After enabling, add them to shipping zones in WooCommerce > Settings > Shipping.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_services_section'
+            ],
+            [
+                'title' => __('RedCode', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_service_redcode_enabled',
+                'type' => 'checkbox',
+                'desc' => __('Same-day delivery for small packages (max 5kg)', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'default' => 'no'
+            ],
+            [
+                'title' => __('Express Loco', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_service_express_loco_enabled',
+                'type' => 'checkbox',
+                'desc' => __('Fast same-day delivery service', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'default' => 'no'
+            ],
+            [
+                'title' => __('Collect Point OMV', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_service_omv_enabled',
+                'type' => 'checkbox',
+                'desc' => __('Pickup from OMV/Petrom gas stations network', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'default' => 'no'
+            ],
+            [
+                'title' => __('Collect Point PayPoint', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_service_paypoint_enabled',
+                'type' => 'checkbox',
+                'desc' => __('Pickup from PayPoint network locations', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'default' => 'no'
+            ],
+            [
+                'title' => __('Produse Albe', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_service_produse_albe_enabled',
+                'type' => 'checkbox',
+                'desc' => __('Specialized transport for large electronics and appliances', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'default' => 'no'
+            ],
+            [
+                'title' => __('FANBox', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'id' => 'hgezlpfcr_pro_service_fanbox_enabled',
+                'type' => 'checkbox',
+                'desc' => __('Delivery to FANBox lockers with 24/7 availability', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+                'default' => 'no'
+            ],
+            ['type' => 'sectionend', 'id' => 'hgezlpfcr_pro_services_section'],
         ];
 
         return $pro_settings;

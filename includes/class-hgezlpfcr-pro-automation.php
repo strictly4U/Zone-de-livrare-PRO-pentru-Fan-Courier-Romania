@@ -42,6 +42,16 @@ class HGEZLPFCR_Pro_Automation {
      * @param WC_Order $order Order object
      */
     public static function handle_order_status_change($order_id, $old_status, $new_status, $order) {
+        // LICENSE CHECK: Verify license is active before running automations
+        if (!class_exists('HGEZLPFCR_Pro_License_Manager') || !HGEZLPFCR_Pro_License_Manager::is_license_active()) {
+            if (class_exists('HGEZLPFCR_Logger')) {
+                HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Auto AWB skipped - no active license', [
+                    'order_id' => $order_id
+                ]);
+            }
+            return;
+        }
+
         // Debug logging
         if (class_exists('HGEZLPFCR_Logger')) {
             HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Order status changed', [
@@ -137,6 +147,17 @@ class HGEZLPFCR_Pro_Automation {
      * @param string $awb_number Generated AWB number
      */
     public static function handle_awb_generated($order_id, $awb_number) {
+        // LICENSE CHECK: Verify license is active before running auto-close
+        if (!class_exists('HGEZLPFCR_Pro_License_Manager') || !HGEZLPFCR_Pro_License_Manager::is_license_active()) {
+            if (class_exists('HGEZLPFCR_Logger')) {
+                HGEZLPFCR_Logger::log('[HGEZLPFCR PRO] Auto-close skipped - no active license', [
+                    'order_id' => $order_id,
+                    'awb' => $awb_number
+                ]);
+            }
+            return;
+        }
+
         // Quick validation
         $order = wc_get_order($order_id);
         if (!$order) {
