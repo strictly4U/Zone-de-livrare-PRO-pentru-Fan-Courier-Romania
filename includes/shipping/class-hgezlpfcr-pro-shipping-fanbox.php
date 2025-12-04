@@ -50,14 +50,21 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 	}
 
 	/**
-	 * Initialize form fields specific to FANBox
+	 * Get instance form fields specific to FANBox
 	 * Extends parent form fields with FANBox-specific options
 	 */
-	public function init_form_fields() {
-		parent::init_form_fields();
+	protected function get_instance_form_fields() {
+		$fields = parent::get_instance_form_fields();
 
-		// Add FANBox-specific field after the default fields
-		$this->instance_form_fields['fanbox_info'] = [
+		// Customize title default
+		$fields['title']['default'] = __('FAN Courier FANBox', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+		$fields['title']['description'] = __('Numele afișat la checkout pentru metoda de livrare FANBox.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+
+		// Customize free shipping description
+		$fields['free_shipping_min']['description'] = __('Valoarea minimă pentru transport gratuit FANBox. Lăsați 0 pentru a dezactiva.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
+
+		// Add FANBox-specific info field
+		$fields['fanbox_info'] = [
 			'title'       => __('Informații FANBox', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
 			'type'        => 'title',
 			'description' => __('<strong>Despre serviciul FANBox:</strong><br>
@@ -69,16 +76,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 			'class'       => 'fc-pro-info-notice',
 		];
 
-		// Customize title default
-		$this->instance_form_fields['title']['default'] = __('FAN Courier FANBox', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
-		$this->instance_form_fields['title']['description'] = __('Numele afișat la checkout pentru metoda de livrare FANBox.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
-
-		// Customize free shipping description
-		$this->instance_form_fields['free_shipping_min']['description'] = __('Valoarea minimă pentru transport gratuit FANBox. Lăsați 0 pentru a dezactiva.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
-
-		// Customize fixed cost description
-		$this->instance_form_fields['cost_fixed']['description'] = __('Cost fix pentru livrare în FANBox (când tarifare dinamică este dezactivată).', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
-		$this->instance_form_fields['cost_fixed']['default'] = '0';
+		return $fields;
 	}
 
 	/**
@@ -122,11 +120,13 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		parent::calculate_shipping($package);
 
 		// Log FANBox-specific calculation
-		HGEZLPFCR_Logger::log('FANBox shipping calculated', [
-			'method' => 'fc_pro_fanbox',
-			'service_id' => $this->get_current_service_id(),
-			'destination' => $package['destination'] ?? [],
-		]);
+		if (class_exists('HGEZLPFCR_Logger')) {
+			HGEZLPFCR_Logger::log('FANBox shipping calculated', [
+				'method' => 'fc_pro_fanbox',
+				'service_id' => $this->service_id,
+				'destination' => $package['destination'] ?? [],
+			]);
+		}
 	}
 
 	/**
@@ -137,70 +137,14 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 	 * @return float Cost or 0 on failure
 	 */
 	protected function get_dynamic_cost($package) {
-		try {
-			// Reuse Standard plugin's API Client
-			if (!class_exists('HGEZLPFCR_API_Client')) {
-				HGEZLPFCR_Logger::error('API Client not available for FANBox dynamic pricing');
-				return 0;
-			}
+		// Set service_name for parent class to use
+		$this->service_name = 'FANbox';
+		$this->service_type_id = $this->service_id;
 
-			$api = new HGEZLPFCR_API_Client();
-
-			// Build tariff request for FANBox service
-			$destination = $package['destination'] ?? [];
-			if (empty($destination['city'])) {
-				HGEZLPFCR_Logger::log('Insufficient destination data for FANBox dynamic pricing', $destination);
-				return 0;
-			}
-
-			$params = [
-				'service'        => $this->get_service_name(), // "FANBox"
-				'county'         => $destination['state'] ?? '',
-				'locality'       => $destination['city'] ?? '',
-				'weight'         => $this->calculate_package_weight($package),
-				'length'         => 30,
-				'width'          => 20,
-				'height'         => 10,
-				'declared_value' => WC()->cart ? WC()->cart->get_total('edit') : 0,
-			];
-
-			HGEZLPFCR_Logger::log('FANBox dynamic pricing request', $params);
-
-			$response = $api->get_tariff($params);
-
-			if (is_wp_error($response)) {
-				HGEZLPFCR_Logger::error('FANBox tariff API error', [
-					'error' => $response->get_error_message(),
-				]);
-				return 0;
-			}
-
-			$cost = isset($response['price']) ? (float) $response['price'] : 0;
-
-			HGEZLPFCR_Logger::log('FANBox dynamic pricing response', [
-				'cost' => $cost,
-				'response' => $response,
-			]);
-
-			return $cost;
-
-		} catch (Exception $e) {
-			HGEZLPFCR_Logger::error('FANBox dynamic pricing exception', [
-				'exception' => $e->getMessage(),
-			]);
-			return 0;
-		}
+		// Use parent implementation which uses PRO API
+		return parent::get_dynamic_cost($package);
 	}
 
-	/**
-	 * Get current Service ID based on COD detection
-	 * Returns 27 for standard, 28 for COD
-	 *
-	 * @return int Service ID
-	 */
-	protected function get_current_service_id() {
-		return $this->is_cod_order() ? $this->service_id_cod : $this->service_id;
-	}
 
 	/**
 	 * Validate FANBox selection before order placement
