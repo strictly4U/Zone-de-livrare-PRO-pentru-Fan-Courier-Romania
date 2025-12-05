@@ -194,55 +194,87 @@
 
 			// Check "Ship to different address" checkbox
 			var $checkbox = $('#ship-to-different-address-checkbox');
-			if (!$checkbox.is(':checked')) {
+			if ($checkbox.length && !$checkbox.is(':checked')) {
 				$checkbox.prop('checked', true).trigger('change');
 			}
 
 			// Wait for shipping fields to be visible
 			setTimeout(function() {
 				// Hide original shipping address fields
-				$('.woocommerce-shipping-fields__field-wrapper').addClass('hgezlpfcr-hidden-for-fanbox').hide();
-
-				// Create FANBox info container if not exists
-				if (!$('#hgezlpfcr-fanbox-shipping-info').length) {
-					var fanboxName = decodeURIComponent(self.getCookie(self.config.cookieNameFanbox) || '');
-					var fanboxFullAddress = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_full_address') || '');
-					var fanboxDescription = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_description') || '');
-					var fanboxSchedule = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_schedule') || '');
-
-					var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
-					infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
-
-					if (fanboxName) {
-						infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + fanboxName + '</strong></p>';
-						if (fanboxFullAddress) {
-							infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fanboxFullAddress + '</p>';
-						}
-						if (fanboxDescription) {
-							infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + fanboxDescription + '</p>';
-						}
-						if (fanboxSchedule) {
-							infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + fanboxSchedule + '</p>';
-						}
-						infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
-					} else {
-						infoHtml += '<p style="margin: 0 0 15px 0; color: #856404;">' + hgezlpfcrProFanbox.i18n.noSelection + '</p>';
-						infoHtml += '<button type="button" class="button alt" id="hgezlpfcr-select-fanbox-btn">' + hgezlpfcrProFanbox.i18n.mapButtonText + '</button>';
-					}
-
-					infoHtml += '</div>';
-
-					$('.woocommerce-shipping-fields__field-wrapper').after(infoHtml);
-
-					// Bind button events
-					$('#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn').on('click', function(e) {
-						e.preventDefault();
-						self.openMap();
-					});
+				var $shippingWrapper = $('.woocommerce-shipping-fields__field-wrapper');
+				if ($shippingWrapper.length) {
+					$shippingWrapper.addClass('hgezlpfcr-hidden-for-fanbox').hide();
 				}
 
+				// Always remove existing and recreate to get latest data
+				$('#hgezlpfcr-fanbox-shipping-info').remove();
+
+				var fanboxName = self.getCookie(self.config.cookieNameFanbox);
+				var fanboxFullAddress = self.getCookie('hgezlpfcr_pro_fanbox_full_address');
+				var fanboxDescription = self.getCookie('hgezlpfcr_pro_fanbox_description');
+				var fanboxSchedule = self.getCookie('hgezlpfcr_pro_fanbox_schedule');
+
+				// Decode values
+				fanboxName = fanboxName ? decodeURIComponent(fanboxName) : '';
+				fanboxFullAddress = fanboxFullAddress ? decodeURIComponent(fanboxFullAddress) : '';
+				fanboxDescription = fanboxDescription ? decodeURIComponent(fanboxDescription) : '';
+				fanboxSchedule = fanboxSchedule ? decodeURIComponent(fanboxSchedule) : '';
+
+				console.log('[FANBox] Building info container with:', {
+					name: fanboxName,
+					address: fanboxFullAddress,
+					description: fanboxDescription,
+					schedule: fanboxSchedule
+				});
+
+				var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
+				infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
+
+				if (fanboxName) {
+					infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + fanboxName + '</strong></p>';
+					if (fanboxFullAddress) {
+						infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fanboxFullAddress + '</p>';
+					}
+					if (fanboxDescription) {
+						infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + fanboxDescription + '</p>';
+					}
+					if (fanboxSchedule) {
+						infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + fanboxSchedule + '</p>';
+					}
+					infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
+				} else {
+					infoHtml += '<p style="margin: 0 0 15px 0; color: #856404;">' + hgezlpfcrProFanbox.i18n.noSelection + '</p>';
+					infoHtml += '<button type="button" class="button alt" id="hgezlpfcr-select-fanbox-btn">' + hgezlpfcrProFanbox.i18n.mapButtonText + '</button>';
+				}
+
+				infoHtml += '</div>';
+
+				// Try multiple insertion points for different themes
+				var $insertPoint = null;
+				if ($shippingWrapper.length) {
+					$insertPoint = $shippingWrapper;
+				} else if ($('.woocommerce-shipping-fields').length) {
+					$insertPoint = $('.woocommerce-shipping-fields');
+				} else if ($('#ship-to-different-address').length) {
+					$insertPoint = $('#ship-to-different-address');
+				}
+
+				if ($insertPoint && $insertPoint.length) {
+					$insertPoint.after(infoHtml);
+				} else {
+					// Fallback: append to checkout form
+					$('.woocommerce-checkout').append(infoHtml);
+				}
+
+				// Bind button events using event delegation
+				$(document).off('click', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn');
+				$(document).on('click', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn', function(e) {
+					e.preventDefault();
+					self.openMap();
+				});
+
 				console.log('[FANBox] Shipping section updated with FANBox info');
-			}, 100);
+			}, 150);
 		},
 
 		/**
@@ -413,52 +445,91 @@
 		 */
 		getShippingCounty: function() {
 			var self = this;
+			var countyCode = '';
+			var countyText = '';
 
-			// Try to get county code first
-			var countyCode = $('#shipping_state').val() || $('#billing_state').val() || '';
+			// Check if "Ship to different address" is checked
+			var useShipping = $('#ship-to-different-address-checkbox').is(':checked');
+
+			if (useShipping) {
+				// Try shipping fields first
+				countyCode = $('#shipping_state').val() || '';
+				countyText = $('select#shipping_state option:selected').text() || $('#shipping_state').val() || '';
+			}
+
+			// Fallback to billing
+			if (!countyCode) {
+				countyCode = $('#billing_state').val() || '';
+			}
+			if (!countyText) {
+				countyText = $('select#billing_state option:selected').text() || $('#billing_state').val() || '';
+			}
 
 			// If we have a code, map it to full name
 			if (countyCode && this.countyMap[countyCode.toUpperCase()]) {
+				console.log('[FANBox] County code mapped:', countyCode, '->', this.countyMap[countyCode.toUpperCase()]);
 				return this.countyMap[countyCode.toUpperCase()];
 			}
 
-			// Try to get county name from select text
-			var countyText = $('select[name="shipping_state"] option:selected').text() ||
-				$('select[name="billing_state"] option:selected').text() ||
-				$('#shipping_state').val() ||
-				$('#billing_state').val() ||
-				'';
-
 			// Remove diacritics from the text
-			return this.removeDiacritics(countyText);
+			var result = this.removeDiacritics(countyText);
+			console.log('[FANBox] County text:', countyText, '->', result);
+			return result;
 		},
 
 		/**
 		 * Get shipping locality (without diacritics)
 		 */
 		getShippingLocality: function() {
-			var locality = $('#shipping_city').val() ||
-				$('#billing_city').val() ||
-				$('input[name="shipping_city"]').val() ||
-				'';
+			var locality = '';
+
+			// Check if "Ship to different address" is checked
+			var useShipping = $('#ship-to-different-address-checkbox').is(':checked');
+
+			if (useShipping) {
+				// Try shipping fields first - multiple selectors for different themes
+				locality = $('#shipping_city').val() ||
+					$('input[name="shipping_city"]').val() ||
+					$('select#shipping_city option:selected').text() ||
+					$('[id*="shipping"][id*="city"]').val() ||
+					'';
+			}
+
+			// Fallback to billing
+			if (!locality) {
+				locality = $('#billing_city').val() ||
+					$('input[name="billing_city"]').val() ||
+					$('select#billing_city option:selected').text() ||
+					$('[id*="billing"][id*="city"]').val() ||
+					'';
+			}
 
 			// Remove diacritics
-			return this.removeDiacritics(locality);
+			var result = this.removeDiacritics(locality);
+			console.log('[FANBox] Locality:', locality, '->', result);
+			return result;
 		},
 
 		/**
 		 * Handle FANBox selection from map
 		 */
 		onFanboxSelected: function(pickupPoint) {
-			console.log('[FANBox] FANBox selected (full object):', pickupPoint);
+			var self = this;
+			console.log('[FANBox] FANBox selected (full object):', JSON.stringify(pickupPoint, null, 2));
 
 			this.selectedPickupPoint = pickupPoint;
 
-			// Extract data from FANBox library response
-			var name = pickupPoint.name || '';
-			var description = pickupPoint.description || '';
-			var schedule = pickupPoint.schedule || '';
-			var fullAddress = pickupPoint.address || '';
+			// Extract data from FANBox library response with validation
+			var name = (pickupPoint.name && pickupPoint.name !== 'undefined') ? pickupPoint.name : '';
+			var description = (pickupPoint.description && pickupPoint.description !== 'undefined') ? pickupPoint.description : '';
+			var schedule = (pickupPoint.schedule && pickupPoint.schedule !== 'undefined') ? pickupPoint.schedule : '';
+			var fullAddress = (pickupPoint.address && pickupPoint.address !== 'undefined' && !pickupPoint.address.startsWith('undefined')) ? pickupPoint.address : '';
+
+			// Validate - check for undefined strings (library might return string "undefined")
+			if (fullAddress.indexOf('undefined') !== -1) {
+				console.warn('[FANBox] Invalid address contains "undefined":', fullAddress);
+				fullAddress = '';
+			}
 
 			// Parse county and locality from address field
 			// Format: "County, City, Street, Number, PostalCode, Description"
@@ -468,8 +539,9 @@
 			if (fullAddress) {
 				var addressParts = fullAddress.split(',').map(function(s) { return s.trim(); });
 				if (addressParts.length >= 2) {
-					county = addressParts[0];    // First part is county
-					locality = addressParts[1];  // Second part is city/locality
+					// Validate parts are not "undefined"
+					county = (addressParts[0] && addressParts[0] !== 'undefined') ? addressParts[0] : '';
+					locality = (addressParts[1] && addressParts[1] !== 'undefined') ? addressParts[1] : '';
 				}
 			}
 
@@ -489,14 +561,32 @@
 			this.setCookie('hgezlpfcr_pro_fanbox_description', encodeURIComponent(description), this.config.cookieExpireDays);
 			this.setCookie('hgezlpfcr_pro_fanbox_schedule', encodeURIComponent(schedule), this.config.cookieExpireDays);
 
+			console.log('[FANBox] Cookies set, verifying:', {
+				name: this.getCookie(this.config.cookieNameFanbox),
+				address: this.getCookie(this.config.cookieNameAddress),
+				fullAddress: this.getCookie('hgezlpfcr_pro_fanbox_full_address')
+			});
+
 			// Update display in shipping method list
 			$('#hgezlpfcr-pro-fanbox-details').html(name);
 
-			// Update shipping section with FANBox info
-			this.updateShippingWithFanboxInfo(name, fullAddress, description, schedule);
+			// Immediately update the FANBox info container
+			var $infoContainer = $('#hgezlpfcr-fanbox-shipping-info');
+			if ($infoContainer.length) {
+				// Update existing container
+				this.updateShippingWithFanboxInfo(name, fullAddress, description, schedule);
+			} else {
+				// Create the container
+				this.hideShippingAddressFields();
+			}
 
-			// Trigger checkout update to save selection
-			$('body').trigger('update_checkout');
+			// Update shipping destination text
+			this.updateShippingDestination();
+
+			// Trigger checkout update with a delay to avoid race conditions
+			setTimeout(function() {
+				$('body').trigger('update_checkout');
+			}, 300);
 		},
 
 		/**
@@ -589,11 +679,18 @@
 		 */
 		getCookie: function(key) {
 			var cookie = '';
-			document.cookie.split(';').forEach(function(value) {
-				if (value.split('=')[0].trim() === key) {
-					cookie = value.split('=')[1];
+			var cookies = document.cookie.split(';');
+			for (var i = 0; i < cookies.length; i++) {
+				var c = cookies[i].trim();
+				var eqPos = c.indexOf('=');
+				if (eqPos > -1) {
+					var cookieName = c.substring(0, eqPos);
+					if (cookieName === key) {
+						cookie = c.substring(eqPos + 1);
+						break;
+					}
 				}
-			});
+			}
 			return cookie || '';
 		},
 

@@ -163,6 +163,44 @@ abstract class HGEZLPFCR_Pro_Shipping_Base extends WC_Shipping_Method {
     }
 
     /**
+     * Romanian county code to name mapping (without diacritics for API compatibility)
+     */
+    protected static $county_map = [
+        'AB' => 'Alba', 'AR' => 'Arad', 'AG' => 'Arges', 'BC' => 'Bacau', 'BH' => 'Bihor',
+        'BN' => 'Bistrita-Nasaud', 'BT' => 'Botosani', 'BV' => 'Brasov', 'BR' => 'Braila',
+        'B' => 'Bucuresti', 'BZ' => 'Buzau', 'CS' => 'Caras-Severin', 'CL' => 'Calarasi',
+        'CJ' => 'Cluj', 'CT' => 'Constanta', 'CV' => 'Covasna', 'DB' => 'Dambovita',
+        'DJ' => 'Dolj', 'GL' => 'Galati', 'GR' => 'Giurgiu', 'GJ' => 'Gorj', 'HR' => 'Harghita',
+        'HD' => 'Hunedoara', 'IL' => 'Ialomita', 'IS' => 'Iasi', 'IF' => 'Ilfov',
+        'MM' => 'Maramures', 'MH' => 'Mehedinti', 'MS' => 'Mures', 'NT' => 'Neamt',
+        'OT' => 'Olt', 'PH' => 'Prahova', 'SM' => 'Satu Mare', 'SJ' => 'Salaj',
+        'SB' => 'Sibiu', 'SV' => 'Suceava', 'TR' => 'Teleorman', 'TM' => 'Timis',
+        'TL' => 'Tulcea', 'VS' => 'Vaslui', 'VL' => 'Valcea', 'VN' => 'Vrancea'
+    ];
+
+    /**
+     * Convert county code to full name for API
+     */
+    protected function get_county_name($county_code) {
+        $code = strtoupper(trim($county_code));
+        return self::$county_map[$code] ?? $county_code;
+    }
+
+    /**
+     * Remove diacritics from string
+     */
+    protected function remove_diacritics($str) {
+        $transliterator = null;
+        if (function_exists('transliterator_transliterate')) {
+            return transliterator_transliterate('Any-Latin; Latin-ASCII; Lower()', $str);
+        }
+        // Fallback: simple replacement
+        $search = ['ă', 'â', 'î', 'ș', 'ț', 'Ă', 'Â', 'Î', 'Ș', 'Ț', 'ş', 'ţ', 'Ş', 'Ţ'];
+        $replace = ['a', 'a', 'i', 's', 't', 'A', 'A', 'I', 'S', 'T', 's', 't', 'S', 'T'];
+        return str_replace($search, $replace, $str);
+    }
+
+    /**
      * Get dynamic cost from API
      * Uses HGEZLPFCR_Pro_API for PRO services (standalone, no base plugin dependency)
      */
@@ -179,15 +217,29 @@ abstract class HGEZLPFCR_Pro_Shipping_Base extends WC_Shipping_Method {
                 return 0;
             }
 
+            // Convert county code to full name for FAN Courier API
+            $county_code = $destination['state'] ?? '';
+            $county_name = $this->get_county_name($county_code);
+
+            // Remove diacritics from locality for API compatibility
+            $locality = $this->remove_diacritics($destination['city'] ?? '');
+
             // Prepare params for API calls
             $params = [
-                'county' => $destination['state'] ?? '',
-                'locality' => $destination['city'] ?? '',
+                'county' => $county_name,
+                'locality' => $locality,
                 'weight' => $this->calculate_package_weight($package),
                 'length' => 30,
                 'width' => 20,
                 'height' => 10,
             ];
+
+            $this->log('Dynamic pricing params', [
+                'original_county' => $county_code,
+                'mapped_county' => $county_name,
+                'locality' => $locality,
+                'weight' => $params['weight']
+            ]);
 
             // Check service availability first using PRO API
             $availability = HGEZLPFCR_Pro_API::check_service($this->service_name, $params);

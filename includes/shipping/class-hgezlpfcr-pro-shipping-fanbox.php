@@ -175,11 +175,34 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 				$fanbox_description  = isset($_COOKIE['hgezlpfcr_pro_fanbox_description']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_description'])) : '';
 				$fanbox_schedule     = isset($_COOKIE['hgezlpfcr_pro_fanbox_schedule']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_schedule'])) : '';
 
+				// Log raw cookie values for debugging
+				if (class_exists('HGEZLPFCR_Logger')) {
+					HGEZLPFCR_Logger::log('FANBox cookies received', [
+						'fanbox_name_raw'         => $fanbox_name,
+						'fanbox_address_raw'      => $fanbox_address,
+						'fanbox_full_address_raw' => $fanbox_full_address,
+					]);
+				}
+
 				if (!empty($fanbox_name)) {
 					$decoded_name = urldecode($fanbox_name);
 					$decoded_full_address = urldecode($fanbox_full_address);
 					$decoded_description = urldecode($fanbox_description);
 					$decoded_schedule = urldecode($fanbox_schedule);
+
+					// Validate - filter out "undefined" strings
+					if ($decoded_name === 'undefined') {
+						$decoded_name = '';
+					}
+					if ($decoded_full_address === 'undefined' || strpos($decoded_full_address, 'undefined') !== false) {
+						$decoded_full_address = '';
+					}
+					if ($decoded_description === 'undefined') {
+						$decoded_description = '';
+					}
+					if ($decoded_schedule === 'undefined') {
+						$decoded_schedule = '';
+					}
 
 					// Save FANBox information to order meta
 					$order->add_meta_data('_hgezlpfcr_pro_fanbox_name', $decoded_name);
@@ -195,25 +218,53 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 						if (count($address_parts) === 2) {
 							$county = $address_parts[0];
 							$locality = $address_parts[1];
-							$order->add_meta_data('_hgezlpfcr_pro_fanbox_county', $county);
-							$order->add_meta_data('_hgezlpfcr_pro_fanbox_locality', $locality);
+
+							// Validate - filter out "undefined" strings
+							if ($county === 'undefined') {
+								$county = '';
+							}
+							if ($locality === 'undefined') {
+								$locality = '';
+							}
+
+							if ($county) {
+								$order->add_meta_data('_hgezlpfcr_pro_fanbox_county', $county);
+							}
+							if ($locality) {
+								$order->add_meta_data('_hgezlpfcr_pro_fanbox_locality', $locality);
+							}
 						}
 					}
 
 					// Use full address if available, otherwise build from parts
-					$shipping_address = $decoded_full_address ? $decoded_full_address : ($locality . ', ' . $county);
-					$order->add_meta_data('_hgezlpfcr_pro_fanbox_address', $shipping_address);
+					$shipping_address = '';
+					if (!empty($decoded_full_address)) {
+						$shipping_address = $decoded_full_address;
+					} elseif (!empty($locality) && !empty($county)) {
+						$shipping_address = $locality . ', ' . $county;
+					} elseif (!empty($locality)) {
+						$shipping_address = $locality;
+					} elseif (!empty($county)) {
+						$shipping_address = $county;
+					}
+
+					if (!empty($shipping_address)) {
+						$order->add_meta_data('_hgezlpfcr_pro_fanbox_address', $shipping_address);
+					}
 
 					// Override shipping address with FANBox location
 					$order->set_shipping_company('FANBox: ' . $decoded_name);
-					$order->set_shipping_address_1($shipping_address);
-					if ($decoded_description) {
+
+					if (!empty($shipping_address)) {
+						$order->set_shipping_address_1($shipping_address);
+					}
+					if (!empty($decoded_description)) {
 						$order->set_shipping_address_2($decoded_description);
 					}
-					if ($locality) {
+					if (!empty($locality)) {
 						$order->set_shipping_city($locality);
 					}
-					if ($county) {
+					if (!empty($county)) {
 						$order->set_shipping_state($county);
 					}
 					$order->set_shipping_postcode('');
@@ -222,9 +273,11 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 
 					if (class_exists('HGEZLPFCR_Logger')) {
 						HGEZLPFCR_Logger::log('FANBox selection saved to order', [
-							'order_id'       => is_object($order) ? $order->get_id() : $order_id,
-							'fanbox_name'    => urldecode($fanbox_name),
-							'fanbox_address' => $fanbox_address ? urldecode($fanbox_address) : '',
+							'order_id'         => is_object($order) ? $order->get_id() : $order_id,
+							'fanbox_name'      => $decoded_name,
+							'shipping_address' => $shipping_address,
+							'county'           => $county,
+							'locality'         => $locality,
 						]);
 					}
 				}
