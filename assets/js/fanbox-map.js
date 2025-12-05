@@ -192,23 +192,9 @@
 		hideShippingAddressFields: function() {
 			var self = this;
 
-			// Check "Ship to different address" checkbox
-			var $checkbox = $('#ship-to-different-address-checkbox');
-			if ($checkbox.length && !$checkbox.is(':checked')) {
-				$checkbox.prop('checked', true).trigger('change');
-			}
-
-			// Wait for shipping fields to be visible
+			// Wait a bit for the page to stabilize
 			setTimeout(function() {
-				// Hide original shipping address fields
-				var $shippingWrapper = $('.woocommerce-shipping-fields__field-wrapper');
-				if ($shippingWrapper.length) {
-					$shippingWrapper.addClass('hgezlpfcr-hidden-for-fanbox').hide();
-				}
-
-				// Always remove existing and recreate to get latest data
-				$('#hgezlpfcr-fanbox-shipping-info').remove();
-
+				// Get saved FANBox data from cookies
 				var fanboxName = self.getCookie(self.config.cookieNameFanbox);
 				var fanboxFullAddress = self.getCookie('hgezlpfcr_pro_fanbox_full_address');
 				var fanboxDescription = self.getCookie('hgezlpfcr_pro_fanbox_description');
@@ -220,58 +206,16 @@
 				fanboxDescription = fanboxDescription ? decodeURIComponent(fanboxDescription) : '';
 				fanboxSchedule = fanboxSchedule ? decodeURIComponent(fanboxSchedule) : '';
 
-				console.log('[FANBox] Building info container with:', {
+				console.log('[FANBox] hideShippingAddressFields with cookies:', {
 					name: fanboxName,
-					address: fanboxFullAddress,
-					description: fanboxDescription,
-					schedule: fanboxSchedule
+					address: fanboxFullAddress
 				});
 
-				var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
-				infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
+				// Remove any existing container
+				$('#hgezlpfcr-fanbox-shipping-info').remove();
 
-				if (fanboxName) {
-					infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + fanboxName + '</strong></p>';
-					if (fanboxFullAddress) {
-						infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fanboxFullAddress + '</p>';
-					}
-					if (fanboxDescription) {
-						infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + fanboxDescription + '</p>';
-					}
-					if (fanboxSchedule) {
-						infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + fanboxSchedule + '</p>';
-					}
-					infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
-				} else {
-					infoHtml += '<p style="margin: 0 0 15px 0; color: #856404;">' + hgezlpfcrProFanbox.i18n.noSelection + '</p>';
-					infoHtml += '<button type="button" class="button alt" id="hgezlpfcr-select-fanbox-btn">' + hgezlpfcrProFanbox.i18n.mapButtonText + '</button>';
-				}
-
-				infoHtml += '</div>';
-
-				// Try multiple insertion points for different themes
-				var $insertPoint = null;
-				if ($shippingWrapper.length) {
-					$insertPoint = $shippingWrapper;
-				} else if ($('.woocommerce-shipping-fields').length) {
-					$insertPoint = $('.woocommerce-shipping-fields');
-				} else if ($('#ship-to-different-address').length) {
-					$insertPoint = $('#ship-to-different-address');
-				}
-
-				if ($insertPoint && $insertPoint.length) {
-					$insertPoint.after(infoHtml);
-				} else {
-					// Fallback: append to checkout form
-					$('.woocommerce-checkout').append(infoHtml);
-				}
-
-				// Bind button events using event delegation
-				$(document).off('click', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn');
-				$(document).on('click', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn', function(e) {
-					e.preventDefault();
-					self.openMap();
-				});
+				// Create the info container
+				self.createFanboxInfoContainer(fanboxName, fanboxFullAddress, fanboxDescription, fanboxSchedule);
 
 				console.log('[FANBox] Shipping section updated with FANBox info');
 			}, 150);
@@ -515,70 +459,119 @@
 		 */
 		onFanboxSelected: function(pickupPoint) {
 			var self = this;
-			console.log('[FANBox] FANBox selected (full object):', JSON.stringify(pickupPoint, null, 2));
+
+			// Log full object for debugging
+			try {
+				console.log('[FANBox] FANBox selected (raw):', pickupPoint);
+				console.log('[FANBox] FANBox address property:', pickupPoint ? pickupPoint.address : 'pickupPoint is null');
+			} catch(e) {
+				console.error('[FANBox] Error logging pickupPoint:', e);
+			}
+
+			if (!pickupPoint) {
+				console.error('[FANBox] No pickup point received');
+				return;
+			}
 
 			this.selectedPickupPoint = pickupPoint;
 
-			// Extract data from FANBox library response with validation
-			var name = (pickupPoint.name && pickupPoint.name !== 'undefined') ? pickupPoint.name : '';
-			var description = (pickupPoint.description && pickupPoint.description !== 'undefined') ? pickupPoint.description : '';
-			var schedule = (pickupPoint.schedule && pickupPoint.schedule !== 'undefined') ? pickupPoint.schedule : '';
-			var fullAddress = (pickupPoint.address && pickupPoint.address !== 'undefined' && !pickupPoint.address.startsWith('undefined')) ? pickupPoint.address : '';
+			// Safely extract data from FANBox library response
+			var name = '';
+			var description = '';
+			var schedule = '';
+			var fullAddress = '';
 
-			// Validate - check for undefined strings (library might return string "undefined")
-			if (fullAddress.indexOf('undefined') !== -1) {
-				console.warn('[FANBox] Invalid address contains "undefined":', fullAddress);
-				fullAddress = '';
+			// Extract name
+			if (pickupPoint.name && typeof pickupPoint.name === 'string' && pickupPoint.name !== 'undefined') {
+				name = pickupPoint.name;
 			}
+
+			// Extract description
+			if (pickupPoint.description && typeof pickupPoint.description === 'string' && pickupPoint.description !== 'undefined') {
+				description = pickupPoint.description;
+			}
+
+			// Extract schedule
+			if (pickupPoint.schedule && typeof pickupPoint.schedule === 'string' && pickupPoint.schedule !== 'undefined') {
+				schedule = pickupPoint.schedule;
+			}
+
+			// Extract address - this is the critical one
+			if (pickupPoint.address && typeof pickupPoint.address === 'string') {
+				fullAddress = pickupPoint.address;
+				// Check for "undefined" in the address
+				if (fullAddress === 'undefined' || fullAddress.indexOf('undefined') === 0) {
+					console.warn('[FANBox] Invalid address detected:', fullAddress);
+					fullAddress = '';
+				}
+			}
+
+			console.log('[FANBox] Extracted values:', {
+				name: name,
+				fullAddress: fullAddress,
+				description: description,
+				schedule: schedule
+			});
 
 			// Parse county and locality from address field
 			// Format: "County, City, Street, Number, PostalCode, Description"
 			var county = '';
 			var locality = '';
 
-			if (fullAddress) {
-				var addressParts = fullAddress.split(',').map(function(s) { return s.trim(); });
+			if (fullAddress && fullAddress.length > 0) {
+				var addressParts = fullAddress.split(',');
 				if (addressParts.length >= 2) {
-					// Validate parts are not "undefined"
-					county = (addressParts[0] && addressParts[0] !== 'undefined') ? addressParts[0] : '';
-					locality = (addressParts[1] && addressParts[1] !== 'undefined') ? addressParts[1] : '';
+					county = addressParts[0].trim();
+					locality = addressParts[1].trim();
+
+					// Validate extracted values
+					if (county === 'undefined') county = '';
+					if (locality === 'undefined') locality = '';
 				}
 			}
 
-			console.log('[FANBox] Extracted data:', {
-				name: name,
+			console.log('[FANBox] Parsed address:', {
 				county: county,
-				locality: locality,
-				fullAddress: fullAddress,
-				description: description,
-				schedule: schedule
+				locality: locality
 			});
 
-			// Save to cookies - encode to handle special characters
-			this.setCookie(this.config.cookieNameFanbox, encodeURIComponent(name), this.config.cookieExpireDays);
-			this.setCookie(this.config.cookieNameAddress, encodeURIComponent(county + '|' + locality), this.config.cookieExpireDays);
-			this.setCookie('hgezlpfcr_pro_fanbox_full_address', encodeURIComponent(fullAddress), this.config.cookieExpireDays);
-			this.setCookie('hgezlpfcr_pro_fanbox_description', encodeURIComponent(description), this.config.cookieExpireDays);
-			this.setCookie('hgezlpfcr_pro_fanbox_schedule', encodeURIComponent(schedule), this.config.cookieExpireDays);
+			// Save to cookies - only if we have values
+			if (name) {
+				this.setCookie(this.config.cookieNameFanbox, encodeURIComponent(name), this.config.cookieExpireDays);
+			}
 
-			console.log('[FANBox] Cookies set, verifying:', {
+			// Always set address cookie (even if empty parts, to overwrite old data)
+			this.setCookie(this.config.cookieNameAddress, encodeURIComponent(county + '|' + locality), this.config.cookieExpireDays);
+
+			if (fullAddress) {
+				this.setCookie('hgezlpfcr_pro_fanbox_full_address', encodeURIComponent(fullAddress), this.config.cookieExpireDays);
+			}
+
+			if (description) {
+				this.setCookie('hgezlpfcr_pro_fanbox_description', encodeURIComponent(description), this.config.cookieExpireDays);
+			}
+
+			if (schedule) {
+				this.setCookie('hgezlpfcr_pro_fanbox_schedule', encodeURIComponent(schedule), this.config.cookieExpireDays);
+			}
+
+			// Verify cookies were set
+			console.log('[FANBox] Cookies verification:', {
 				name: this.getCookie(this.config.cookieNameFanbox),
 				address: this.getCookie(this.config.cookieNameAddress),
-				fullAddress: this.getCookie('hgezlpfcr_pro_fanbox_full_address')
+				fullAddress: this.getCookie('hgezlpfcr_pro_fanbox_full_address'),
+				description: this.getCookie('hgezlpfcr_pro_fanbox_description'),
+				schedule: this.getCookie('hgezlpfcr_pro_fanbox_schedule')
 			});
 
 			// Update display in shipping method list
-			$('#hgezlpfcr-pro-fanbox-details').html(name);
+			$('#hgezlpfcr-pro-fanbox-details').html(name || 'FANBox selectat');
 
-			// Immediately update the FANBox info container
-			var $infoContainer = $('#hgezlpfcr-fanbox-shipping-info');
-			if ($infoContainer.length) {
-				// Update existing container
-				this.updateShippingWithFanboxInfo(name, fullAddress, description, schedule);
-			} else {
-				// Create the container
-				this.hideShippingAddressFields();
-			}
+			// Remove old container and create new one with fresh data
+			$('#hgezlpfcr-fanbox-shipping-info').remove();
+
+			// Create/update the FANBox info container
+			this.createFanboxInfoContainer(name, fullAddress, description, schedule);
 
 			// Update shipping destination text
 			this.updateShippingDestination();
@@ -586,7 +579,66 @@
 			// Trigger checkout update with a delay to avoid race conditions
 			setTimeout(function() {
 				$('body').trigger('update_checkout');
-			}, 300);
+			}, 500);
+		},
+
+		/**
+		 * Create FANBox info container in checkout
+		 */
+		createFanboxInfoContainer: function(name, fullAddress, description, schedule) {
+			var self = this;
+
+			// Check "Ship to different address" checkbox
+			var $checkbox = $('#ship-to-different-address-checkbox');
+			if ($checkbox.length && !$checkbox.is(':checked')) {
+				$checkbox.prop('checked', true).trigger('change');
+			}
+
+			// Build info HTML
+			var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
+			infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
+
+			if (name) {
+				infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + name + '</strong></p>';
+				if (fullAddress) {
+					infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fullAddress + '</p>';
+				}
+				if (description) {
+					infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + description + '</p>';
+				}
+				if (schedule) {
+					infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + schedule + '</p>';
+				}
+				infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
+			} else {
+				infoHtml += '<p style="margin: 0 0 15px 0; color: #856404;">' + hgezlpfcrProFanbox.i18n.noSelection + '</p>';
+				infoHtml += '<button type="button" class="button alt" id="hgezlpfcr-select-fanbox-btn">' + hgezlpfcrProFanbox.i18n.mapButtonText + '</button>';
+			}
+
+			infoHtml += '</div>';
+
+			// Hide original shipping address fields
+			var $shippingWrapper = $('.woocommerce-shipping-fields__field-wrapper');
+			if ($shippingWrapper.length) {
+				$shippingWrapper.addClass('hgezlpfcr-hidden-for-fanbox').hide();
+				$shippingWrapper.after(infoHtml);
+			} else if ($('.woocommerce-shipping-fields').length) {
+				$('.woocommerce-shipping-fields').append(infoHtml);
+			} else if ($('#ship-to-different-address').length) {
+				$('#ship-to-different-address').after(infoHtml);
+			} else {
+				// Fallback: append to checkout form
+				$('.woocommerce-checkout').append(infoHtml);
+			}
+
+			// Bind button click handlers using event delegation
+			$(document).off('click.fanbox', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn');
+			$(document).on('click.fanbox', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn', function(e) {
+				e.preventDefault();
+				self.openMap();
+			});
+
+			console.log('[FANBox] Info container created with data:', { name: name, fullAddress: fullAddress });
 		},
 
 		/**

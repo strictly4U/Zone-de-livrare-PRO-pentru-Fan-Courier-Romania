@@ -3,7 +3,7 @@
  * Plugin Name: HgE PRO: Additional Shipping Services for FAN Courier Romania
  * Plugin URI: https://github.com/georgeshurubaru/FcRapid1923
  * Description: Premium extension adding FANBox lockers, Express Loco, RedCode same-day, CollectPoint (PayPoint/OMV/Petrom), White Products, Cargo and Export shipping services. Requires "HgE: Shipping Zones for FAN Courier Romania" base plugin.
- * Version: 2.0.0
+ * Version: 2.0.1
  * Requires at least: 5.0
  * Tested up to: 6.8
  * Requires PHP: 8.1
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) exit;
 
 // Plugin version and paths
 define('HGEZLPFCR_PRO_PLUGIN_FILE', __FILE__);
-define('HGEZLPFCR_PRO_VERSION', '2.0.0');
+define('HGEZLPFCR_PRO_VERSION', '2.0.1');
 define('HGEZLPFCR_PRO_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('HGEZLPFCR_PRO_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('HGEZLPFCR_PRO_MIN_STANDARD_VERSION', '1.0.2'); // Minimum required Standard version
