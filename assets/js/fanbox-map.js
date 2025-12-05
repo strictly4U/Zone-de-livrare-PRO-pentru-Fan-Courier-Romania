@@ -281,20 +281,55 @@
 		},
 
 		/**
-		 * Get shipping county
+		 * Romanian county codes to names mapping (without diacritics)
 		 */
-		getShippingCounty: function() {
-			var county = $('#shipping_state').val() ||
-				$('#billing_state').val() ||
-				$('select[name="shipping_state"] option:selected').text() ||
-				'';
-
-			// Remove diacritics
-			return String(county).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+		countyMap: {
+			'AB': 'Alba', 'AR': 'Arad', 'AG': 'Arges', 'BC': 'Bacau', 'BH': 'Bihor',
+			'BN': 'Bistrita-Nasaud', 'BT': 'Botosani', 'BV': 'Brasov', 'BR': 'Braila',
+			'B': 'Bucuresti', 'BZ': 'Buzau', 'CS': 'Caras-Severin', 'CL': 'Calarasi',
+			'CJ': 'Cluj', 'CT': 'Constanta', 'CV': 'Covasna', 'DB': 'Dambovita',
+			'DJ': 'Dolj', 'GL': 'Galati', 'GR': 'Giurgiu', 'GJ': 'Gorj', 'HR': 'Harghita',
+			'HD': 'Hunedoara', 'IL': 'Ialomita', 'IS': 'Iasi', 'IF': 'Ilfov',
+			'MM': 'Maramures', 'MH': 'Mehedinti', 'MS': 'Mures', 'NT': 'Neamt',
+			'OT': 'Olt', 'PH': 'Prahova', 'SM': 'Satu Mare', 'SJ': 'Salaj',
+			'SB': 'Sibiu', 'SV': 'Suceava', 'TR': 'Teleorman', 'TM': 'Timis',
+			'TL': 'Tulcea', 'VS': 'Vaslui', 'VL': 'Valcea', 'VN': 'Vrancea'
 		},
 
 		/**
-		 * Get shipping locality
+		 * Remove diacritics from string
+		 */
+		removeDiacritics: function(str) {
+			return String(str).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+		},
+
+		/**
+		 * Get shipping county (without diacritics)
+		 */
+		getShippingCounty: function() {
+			var self = this;
+
+			// Try to get county code first
+			var countyCode = $('#shipping_state').val() || $('#billing_state').val() || '';
+
+			// If we have a code, map it to full name
+			if (countyCode && this.countyMap[countyCode.toUpperCase()]) {
+				return this.countyMap[countyCode.toUpperCase()];
+			}
+
+			// Try to get county name from select text
+			var countyText = $('select[name="shipping_state"] option:selected').text() ||
+				$('select[name="billing_state"] option:selected').text() ||
+				$('#shipping_state').val() ||
+				$('#billing_state').val() ||
+				'';
+
+			// Remove diacritics from the text
+			return this.removeDiacritics(countyText);
+		},
+
+		/**
+		 * Get shipping locality (without diacritics)
 		 */
 		getShippingLocality: function() {
 			var locality = $('#shipping_city').val() ||
@@ -303,7 +338,7 @@
 				'';
 
 			// Remove diacritics
-			return String(locality).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+			return this.removeDiacritics(locality);
 		},
 
 		/**
