@@ -169,14 +169,20 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 			// Check if FANBox shipping method is selected
 			if (strpos($shipping_method, 'fc_pro_fanbox') !== false) {
 				// Get FANBox data from cookies (set by frontend)
-				$fanbox_name    = isset($_COOKIE['hgezlpfcr_pro_fanbox_name']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_name'])) : '';
-				$fanbox_address = isset($_COOKIE['hgezlpfcr_pro_fanbox_address']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_address'])) : '';
+				$fanbox_name         = isset($_COOKIE['hgezlpfcr_pro_fanbox_name']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_name'])) : '';
+				$fanbox_address      = isset($_COOKIE['hgezlpfcr_pro_fanbox_address']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_address'])) : '';
+				$fanbox_full_address = isset($_COOKIE['hgezlpfcr_pro_fanbox_full_address']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_full_address'])) : '';
+				$fanbox_description  = isset($_COOKIE['hgezlpfcr_pro_fanbox_description']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_description'])) : '';
 
 				if (!empty($fanbox_name)) {
 					$decoded_name = urldecode($fanbox_name);
+					$decoded_full_address = urldecode($fanbox_full_address);
+					$decoded_description = urldecode($fanbox_description);
 
 					// Save FANBox information to order meta
 					$order->add_meta_data('_hgezlpfcr_pro_fanbox_name', $decoded_name);
+					$order->add_meta_data('_hgezlpfcr_pro_fanbox_full_address', $decoded_full_address);
+					$order->add_meta_data('_hgezlpfcr_pro_fanbox_description', $decoded_description);
 
 					$county = '';
 					$locality = '';
@@ -186,16 +192,21 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 						if (count($address_parts) === 2) {
 							$county = $address_parts[0];
 							$locality = $address_parts[1];
-							$order->add_meta_data('_hgezlpfcr_pro_fanbox_address', $locality . ', ' . $county);
 							$order->add_meta_data('_hgezlpfcr_pro_fanbox_county', $county);
 							$order->add_meta_data('_hgezlpfcr_pro_fanbox_locality', $locality);
 						}
 					}
 
+					// Use full address if available, otherwise build from parts
+					$shipping_address = $decoded_full_address ? $decoded_full_address : ($locality . ', ' . $county);
+					$order->add_meta_data('_hgezlpfcr_pro_fanbox_address', $shipping_address);
+
 					// Override shipping address with FANBox location
 					$order->set_shipping_company('FANBox: ' . $decoded_name);
-					$order->set_shipping_address_1('Ridicare din locker FANBox');
-					$order->set_shipping_address_2($decoded_name);
+					$order->set_shipping_address_1($shipping_address);
+					if ($decoded_description) {
+						$order->set_shipping_address_2($decoded_description);
+					}
 					if ($locality) {
 						$order->set_shipping_city($locality);
 					}
@@ -224,14 +235,25 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 	 * @param WC_Order $order Order object
 	 */
 	public static function display_fanbox_info($order) {
-		$fanbox_name    = $order->get_meta('_hgezlpfcr_pro_fanbox_name');
-		$fanbox_address = $order->get_meta('_hgezlpfcr_pro_fanbox_address');
+		$fanbox_name         = $order->get_meta('_hgezlpfcr_pro_fanbox_name');
+		$fanbox_full_address = $order->get_meta('_hgezlpfcr_pro_fanbox_full_address');
+		$fanbox_address      = $order->get_meta('_hgezlpfcr_pro_fanbox_address');
+		$fanbox_description  = $order->get_meta('_hgezlpfcr_pro_fanbox_description');
 
-		if ($fanbox_name && $fanbox_address) {
+		// Use full address if available, otherwise fallback
+		$display_address = $fanbox_full_address ? $fanbox_full_address : $fanbox_address;
+
+		if ($fanbox_name) {
 			echo '<h2>' . esc_html__('Informații FANBox', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</h2>';
-			echo '<p><strong>' . esc_html__('FANBox selectat:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong><br>';
-			echo esc_html($fanbox_name) . '<br>';
-			echo esc_html($fanbox_address) . '</p>';
+			echo '<div style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 6px;">';
+			echo '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">📦 ' . esc_html($fanbox_name) . '</strong></p>';
+			if ($display_address) {
+				echo '<p style="margin: 0 0 5px 0;"><strong>' . esc_html__('Adresă:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong> ' . esc_html($display_address) . '</p>';
+			}
+			if ($fanbox_description) {
+				echo '<p style="margin: 0; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+			}
+			echo '</div>';
 		}
 	}
 
@@ -241,14 +263,24 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 	 * @param WC_Order $order Order object
 	 */
 	public static function display_fanbox_info_admin($order) {
-		$fanbox_name    = $order->get_meta('_hgezlpfcr_pro_fanbox_name');
-		$fanbox_address = $order->get_meta('_hgezlpfcr_pro_fanbox_address');
+		$fanbox_name         = $order->get_meta('_hgezlpfcr_pro_fanbox_name');
+		$fanbox_full_address = $order->get_meta('_hgezlpfcr_pro_fanbox_full_address');
+		$fanbox_address      = $order->get_meta('_hgezlpfcr_pro_fanbox_address');
+		$fanbox_description  = $order->get_meta('_hgezlpfcr_pro_fanbox_description');
 
-		if ($fanbox_name && $fanbox_address) {
-			echo '<div class="fc-pro-fanbox-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 10px; margin: 10px 0; border-radius: 4px;">';
-			echo '<p style="margin: 0;"><strong style="color: #155724;">' . esc_html__('📦 FANBox selectat:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong><br>';
-			echo '<span style="font-size: 14px;">' . esc_html($fanbox_name) . '</span><br>';
-			echo '<span style="font-size: 13px; color: #666;">' . esc_html($fanbox_address) . '</span></p>';
+		// Use full address if available, otherwise fallback
+		$display_address = $fanbox_full_address ? $fanbox_full_address : $fanbox_address;
+
+		if ($fanbox_name) {
+			echo '<div class="fc-pro-fanbox-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 10px 0; border-radius: 6px;">';
+			echo '<p style="margin: 0 0 10px 0;"><strong style="color: #155724; font-size: 14px;">📦 FANBox selectat:</strong></p>';
+			echo '<p style="margin: 0 0 5px 0; font-weight: bold;">' . esc_html($fanbox_name) . '</p>';
+			if ($display_address) {
+				echo '<p style="margin: 0 0 5px 0; font-size: 13px;"><strong>Adresă:</strong> ' . esc_html($display_address) . '</p>';
+			}
+			if ($fanbox_description) {
+				echo '<p style="margin: 0; font-size: 12px; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+			}
 			echo '</div>';
 		}
 	}

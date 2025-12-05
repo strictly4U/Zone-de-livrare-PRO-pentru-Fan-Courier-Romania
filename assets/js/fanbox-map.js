@@ -187,40 +187,97 @@
 		},
 
 		/**
-		 * Hide shipping address fields when FANBox is selected
+		 * Hide shipping address fields and show FANBox info when FANBox is selected
 		 */
 		hideShippingAddressFields: function() {
-			// Add info message if not exists
-			if (!$('#hgezlpfcr-fanbox-shipping-notice').length) {
-				var noticeHtml = '<div id="hgezlpfcr-fanbox-shipping-notice" class="woocommerce-info" style="margin-bottom: 20px; background: #d4edda; border-color: #c3e6cb; color: #155724;">' +
-					'<strong>📦 ' + hgezlpfcrProFanbox.i18n.deliveryTo + ' FANBox</strong><br>' +
-					'<span style="font-size: 13px;">' + hgezlpfcrProFanbox.i18n.chooseFromMap + '</span>' +
-					'</div>';
+			var self = this;
 
-				// Insert before shipping fields
-				$('.woocommerce-shipping-fields, #ship-to-different-address').before(noticeHtml);
+			// Check "Ship to different address" checkbox
+			var $checkbox = $('#ship-to-different-address-checkbox');
+			if (!$checkbox.is(':checked')) {
+				$checkbox.prop('checked', true).trigger('change');
 			}
 
-			// Hide the "Ship to different address" checkbox and shipping fields
-			$('#ship-to-different-address').addClass('hgezlpfcr-hidden-for-fanbox').hide();
-			$('.woocommerce-shipping-fields__field-wrapper, .shipping_address').addClass('hgezlpfcr-hidden-for-fanbox').hide();
+			// Wait for shipping fields to be visible
+			setTimeout(function() {
+				// Hide original shipping address fields
+				$('.woocommerce-shipping-fields__field-wrapper').addClass('hgezlpfcr-hidden-for-fanbox').hide();
 
-			// Uncheck "ship to different address" to use billing as base
-			$('#ship-to-different-address-checkbox').prop('checked', false).trigger('change');
+				// Create FANBox info container if not exists
+				if (!$('#hgezlpfcr-fanbox-shipping-info').length) {
+					var fanboxName = decodeURIComponent(self.getCookie(self.config.cookieNameFanbox) || '');
+					var fanboxFullAddress = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_full_address') || '');
+					var fanboxDescription = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_description') || '');
 
-			console.log('[FANBox] Shipping address fields hidden');
+					var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
+					infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
+
+					if (fanboxName) {
+						infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + fanboxName + '</strong></p>';
+						if (fanboxFullAddress) {
+							infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fanboxFullAddress + '</p>';
+						}
+						if (fanboxDescription) {
+							infoHtml += '<p style="margin: 0 0 15px 0; color: #666; font-style: italic;">' + fanboxDescription + '</p>';
+						}
+						infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
+					} else {
+						infoHtml += '<p style="margin: 0 0 15px 0; color: #856404;">' + hgezlpfcrProFanbox.i18n.noSelection + '</p>';
+						infoHtml += '<button type="button" class="button alt" id="hgezlpfcr-select-fanbox-btn">' + hgezlpfcrProFanbox.i18n.mapButtonText + '</button>';
+					}
+
+					infoHtml += '</div>';
+
+					$('.woocommerce-shipping-fields__field-wrapper').after(infoHtml);
+
+					// Bind button events
+					$('#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn').on('click', function(e) {
+						e.preventDefault();
+						self.openMap();
+					});
+				}
+
+				console.log('[FANBox] Shipping section updated with FANBox info');
+			}, 100);
+		},
+
+		/**
+		 * Update the FANBox shipping info display
+		 */
+		updateShippingWithFanboxInfo: function(name, fullAddress, description) {
+			var $infoContainer = $('#hgezlpfcr-fanbox-shipping-info');
+
+			if ($infoContainer.length) {
+				var infoHtml = '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
+				infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + name + '</strong></p>';
+				if (fullAddress) {
+					infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fullAddress + '</p>';
+				}
+				if (description) {
+					infoHtml += '<p style="margin: 0 0 15px 0; color: #666; font-style: italic;">' + description + '</p>';
+				}
+				infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
+
+				$infoContainer.html(infoHtml);
+
+				// Rebind button event
+				var self = this;
+				$('#hgezlpfcr-change-fanbox-btn').on('click', function(e) {
+					e.preventDefault();
+					self.openMap();
+				});
+			}
 		},
 
 		/**
 		 * Show shipping address fields when non-FANBox method is selected
 		 */
 		showShippingAddressFields: function() {
-			// Remove FANBox notice
-			$('#hgezlpfcr-fanbox-shipping-notice').remove();
+			// Remove FANBox info container
+			$('#hgezlpfcr-fanbox-shipping-info').remove();
 
 			// Show shipping fields
-			$('#ship-to-different-address').removeClass('hgezlpfcr-hidden-for-fanbox').show();
-			$('.woocommerce-shipping-fields__field-wrapper, .shipping_address').removeClass('hgezlpfcr-hidden-for-fanbox').show();
+			$('.woocommerce-shipping-fields__field-wrapper').removeClass('hgezlpfcr-hidden-for-fanbox').show();
 
 			console.log('[FANBox] Shipping address fields restored');
 		},
@@ -386,19 +443,49 @@
 		 * Handle FANBox selection from map
 		 */
 		onFanboxSelected: function(pickupPoint) {
-			console.log('[FANBox] FANBox selected:', pickupPoint);
+			console.log('[FANBox] FANBox selected (full object):', pickupPoint);
 
 			this.selectedPickupPoint = pickupPoint;
 
-			// Save to cookies
-			this.setCookie(this.config.cookieNameFanbox, pickupPoint.name, this.config.cookieExpireDays);
-			this.setCookie(this.config.cookieNameAddress, pickupPoint.countyName + '|' + pickupPoint.localityName, this.config.cookieExpireDays);
+			// Extract data - try multiple property names as library may vary
+			var name = pickupPoint.name || pickupPoint.Name || '';
+			var county = pickupPoint.countyName || pickupPoint.county || pickupPoint.CountyName || pickupPoint.County || '';
+			var locality = pickupPoint.localityName || pickupPoint.locality || pickupPoint.LocalityName || pickupPoint.Locality || pickupPoint.city || pickupPoint.City || '';
+			var address = pickupPoint.address || pickupPoint.Address || pickupPoint.streetName || pickupPoint.StreetName || '';
+			var streetNo = pickupPoint.streetNo || pickupPoint.StreetNo || pickupPoint.streetNumber || '';
+			var postalCode = pickupPoint.postalCode || pickupPoint.PostalCode || pickupPoint.zipCode || '';
+			var description = pickupPoint.description || pickupPoint.Description || pickupPoint.details || '';
+
+			// Build full address string
+			var fullAddress = '';
+			if (address) {
+				fullAddress = address;
+				if (streetNo) fullAddress += ' ' + streetNo;
+			}
+			if (postalCode) fullAddress += ', ' + postalCode;
+			if (locality) fullAddress += ', ' + locality;
+			if (county) fullAddress += ', ' + county;
+
+			console.log('[FANBox] Extracted data:', {
+				name: name,
+				county: county,
+				locality: locality,
+				address: address,
+				fullAddress: fullAddress,
+				description: description
+			});
+
+			// Save to cookies - encode to handle special characters
+			this.setCookie(this.config.cookieNameFanbox, encodeURIComponent(name), this.config.cookieExpireDays);
+			this.setCookie(this.config.cookieNameAddress, encodeURIComponent(county + '|' + locality), this.config.cookieExpireDays);
+			this.setCookie('hgezlpfcr_pro_fanbox_full_address', encodeURIComponent(fullAddress), this.config.cookieExpireDays);
+			this.setCookie('hgezlpfcr_pro_fanbox_description', encodeURIComponent(description), this.config.cookieExpireDays);
 
 			// Update display
-			$('#hgezlpfcr-pro-fanbox-details').html(pickupPoint.name);
+			$('#hgezlpfcr-pro-fanbox-details').html(name);
 
-			// Update shipping destination
-			this.updateShippingDestination();
+			// Update shipping section with FANBox info
+			this.updateShippingWithFanboxInfo(name, fullAddress, description);
 
 			// Trigger checkout update to save selection
 			$('body').trigger('update_checkout');
