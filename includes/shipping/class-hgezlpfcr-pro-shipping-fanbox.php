@@ -45,6 +45,11 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		$this->method_description = __('Livrare în lockere FANBox amplasate în diverse locații (magazine, benzinării, etc.). Clientul selectează FANbox-ul preferat din hartă la checkout.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro');
 		$this->supports           = ['shipping-zones', 'instance-settings', 'instance-settings-modal'];
 
+		// Set FANBox-specific service info (MUST be before parent::init())
+		$this->service_name       = 'FANbox';
+		$this->service_type_id    = 27; // FANBox Standard service ID
+		$this->requires_pickup_point = true;
+
 		// Initialize parent (handles common functionality)
 		$this->init();
 	}
@@ -77,16 +82,6 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		];
 
 		return $fields;
-	}
-
-	/**
-	 * Get service name for API requests
-	 * Required by Abstract Base Class
-	 *
-	 * @return string Service name
-	 */
-	protected function get_service_name() {
-		return 'FANBox';
 	}
 
 	/**
@@ -128,23 +123,6 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 			]);
 		}
 	}
-
-	/**
-	 * Get dynamic cost for FANBox from API
-	 * Overrides parent to use FANBox-specific service name
-	 *
-	 * @param array $package Package array
-	 * @return float Cost or 0 on failure
-	 */
-	protected function get_dynamic_cost($package) {
-		// Set service_name for parent class to use
-		$this->service_name = 'FANbox';
-		$this->service_type_id = $this->service_id;
-
-		// Use parent implementation which uses PRO API
-		return parent::get_dynamic_cost($package);
-	}
-
 
 	/**
 	 * Validate FANBox selection before order placement
@@ -209,11 +187,13 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 
 					$order->save();
 
-					HGEZLPFCR_Logger::log('FANBox selection saved to order', [
-						'order_id'       => is_object($order) ? $order->get_id() : $order_id,
-						'fanbox_name'    => urldecode($fanbox_name),
-						'fanbox_address' => $fanbox_address ? urldecode($fanbox_address) : '',
-					]);
+					if (class_exists('HGEZLPFCR_Logger')) {
+						HGEZLPFCR_Logger::log('FANBox selection saved to order', [
+							'order_id'       => is_object($order) ? $order->get_id() : $order_id,
+							'fanbox_name'    => urldecode($fanbox_name),
+							'fanbox_address' => $fanbox_address ? urldecode($fanbox_address) : '',
+						]);
+					}
 				}
 			}
 		}
