@@ -173,16 +173,19 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 				$fanbox_address      = isset($_COOKIE['hgezlpfcr_pro_fanbox_address']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_address'])) : '';
 				$fanbox_full_address = isset($_COOKIE['hgezlpfcr_pro_fanbox_full_address']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_full_address'])) : '';
 				$fanbox_description  = isset($_COOKIE['hgezlpfcr_pro_fanbox_description']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_description'])) : '';
+				$fanbox_schedule     = isset($_COOKIE['hgezlpfcr_pro_fanbox_schedule']) ? sanitize_text_field(wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_schedule'])) : '';
 
 				if (!empty($fanbox_name)) {
 					$decoded_name = urldecode($fanbox_name);
 					$decoded_full_address = urldecode($fanbox_full_address);
 					$decoded_description = urldecode($fanbox_description);
+					$decoded_schedule = urldecode($fanbox_schedule);
 
 					// Save FANBox information to order meta
 					$order->add_meta_data('_hgezlpfcr_pro_fanbox_name', $decoded_name);
 					$order->add_meta_data('_hgezlpfcr_pro_fanbox_full_address', $decoded_full_address);
 					$order->add_meta_data('_hgezlpfcr_pro_fanbox_description', $decoded_description);
+					$order->add_meta_data('_hgezlpfcr_pro_fanbox_schedule', $decoded_schedule);
 
 					$county = '';
 					$locality = '';
@@ -239,6 +242,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		$fanbox_full_address = $order->get_meta('_hgezlpfcr_pro_fanbox_full_address');
 		$fanbox_address      = $order->get_meta('_hgezlpfcr_pro_fanbox_address');
 		$fanbox_description  = $order->get_meta('_hgezlpfcr_pro_fanbox_description');
+		$fanbox_schedule     = $order->get_meta('_hgezlpfcr_pro_fanbox_schedule');
 
 		// Use full address if available, otherwise fallback
 		$display_address = $fanbox_full_address ? $fanbox_full_address : $fanbox_address;
@@ -251,7 +255,10 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 				echo '<p style="margin: 0 0 5px 0;"><strong>' . esc_html__('Adresă:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong> ' . esc_html($display_address) . '</p>';
 			}
 			if ($fanbox_description) {
-				echo '<p style="margin: 0; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+				echo '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+			}
+			if ($fanbox_schedule) {
+				echo '<p style="margin: 0; color: #155724;"><strong>' . esc_html__('Program:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong> ' . esc_html($fanbox_schedule) . '</p>';
 			}
 			echo '</div>';
 		}
@@ -267,6 +274,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		$fanbox_full_address = $order->get_meta('_hgezlpfcr_pro_fanbox_full_address');
 		$fanbox_address      = $order->get_meta('_hgezlpfcr_pro_fanbox_address');
 		$fanbox_description  = $order->get_meta('_hgezlpfcr_pro_fanbox_description');
+		$fanbox_schedule     = $order->get_meta('_hgezlpfcr_pro_fanbox_schedule');
 
 		// Use full address if available, otherwise fallback
 		$display_address = $fanbox_full_address ? $fanbox_full_address : $fanbox_address;
@@ -279,7 +287,10 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 				echo '<p style="margin: 0 0 5px 0; font-size: 13px;"><strong>Adresă:</strong> ' . esc_html($display_address) . '</p>';
 			}
 			if ($fanbox_description) {
-				echo '<p style="margin: 0; font-size: 12px; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+				echo '<p style="margin: 0 0 5px 0; font-size: 12px; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+			}
+			if ($fanbox_schedule) {
+				echo '<p style="margin: 0; font-size: 12px; color: #155724;"><strong>Program:</strong> ' . esc_html($fanbox_schedule) . '</p>';
 			}
 			echo '</div>';
 		}

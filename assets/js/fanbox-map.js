@@ -208,6 +208,7 @@
 					var fanboxName = decodeURIComponent(self.getCookie(self.config.cookieNameFanbox) || '');
 					var fanboxFullAddress = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_full_address') || '');
 					var fanboxDescription = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_description') || '');
+					var fanboxSchedule = decodeURIComponent(self.getCookie('hgezlpfcr_pro_fanbox_schedule') || '');
 
 					var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
 					infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
@@ -218,7 +219,10 @@
 							infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fanboxFullAddress + '</p>';
 						}
 						if (fanboxDescription) {
-							infoHtml += '<p style="margin: 0 0 15px 0; color: #666; font-style: italic;">' + fanboxDescription + '</p>';
+							infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + fanboxDescription + '</p>';
+						}
+						if (fanboxSchedule) {
+							infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + fanboxSchedule + '</p>';
 						}
 						infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
 					} else {
@@ -244,7 +248,7 @@
 		/**
 		 * Update the FANBox shipping info display
 		 */
-		updateShippingWithFanboxInfo: function(name, fullAddress, description) {
+		updateShippingWithFanboxInfo: function(name, fullAddress, description, schedule) {
 			var $infoContainer = $('#hgezlpfcr-fanbox-shipping-info');
 
 			if ($infoContainer.length) {
@@ -254,7 +258,10 @@
 					infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fullAddress + '</p>';
 				}
 				if (description) {
-					infoHtml += '<p style="margin: 0 0 15px 0; color: #666; font-style: italic;">' + description + '</p>';
+					infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + description + '</p>';
+				}
+				if (schedule) {
+					infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + schedule + '</p>';
 				}
 				infoHtml += '<button type="button" class="button" id="hgezlpfcr-change-fanbox-btn" style="margin-top: 10px;">🔄 Alege alt FANBox</button>';
 
@@ -447,32 +454,32 @@
 
 			this.selectedPickupPoint = pickupPoint;
 
-			// Extract data - try multiple property names as library may vary
-			var name = pickupPoint.name || pickupPoint.Name || '';
-			var county = pickupPoint.countyName || pickupPoint.county || pickupPoint.CountyName || pickupPoint.County || '';
-			var locality = pickupPoint.localityName || pickupPoint.locality || pickupPoint.LocalityName || pickupPoint.Locality || pickupPoint.city || pickupPoint.City || '';
-			var address = pickupPoint.address || pickupPoint.Address || pickupPoint.streetName || pickupPoint.StreetName || '';
-			var streetNo = pickupPoint.streetNo || pickupPoint.StreetNo || pickupPoint.streetNumber || '';
-			var postalCode = pickupPoint.postalCode || pickupPoint.PostalCode || pickupPoint.zipCode || '';
-			var description = pickupPoint.description || pickupPoint.Description || pickupPoint.details || '';
+			// Extract data from FANBox library response
+			var name = pickupPoint.name || '';
+			var description = pickupPoint.description || '';
+			var schedule = pickupPoint.schedule || '';
+			var fullAddress = pickupPoint.address || '';
 
-			// Build full address string
-			var fullAddress = '';
-			if (address) {
-				fullAddress = address;
-				if (streetNo) fullAddress += ' ' + streetNo;
+			// Parse county and locality from address field
+			// Format: "County, City, Street, Number, PostalCode, Description"
+			var county = '';
+			var locality = '';
+
+			if (fullAddress) {
+				var addressParts = fullAddress.split(',').map(function(s) { return s.trim(); });
+				if (addressParts.length >= 2) {
+					county = addressParts[0];    // First part is county
+					locality = addressParts[1];  // Second part is city/locality
+				}
 			}
-			if (postalCode) fullAddress += ', ' + postalCode;
-			if (locality) fullAddress += ', ' + locality;
-			if (county) fullAddress += ', ' + county;
 
 			console.log('[FANBox] Extracted data:', {
 				name: name,
 				county: county,
 				locality: locality,
-				address: address,
 				fullAddress: fullAddress,
-				description: description
+				description: description,
+				schedule: schedule
 			});
 
 			// Save to cookies - encode to handle special characters
@@ -480,12 +487,13 @@
 			this.setCookie(this.config.cookieNameAddress, encodeURIComponent(county + '|' + locality), this.config.cookieExpireDays);
 			this.setCookie('hgezlpfcr_pro_fanbox_full_address', encodeURIComponent(fullAddress), this.config.cookieExpireDays);
 			this.setCookie('hgezlpfcr_pro_fanbox_description', encodeURIComponent(description), this.config.cookieExpireDays);
+			this.setCookie('hgezlpfcr_pro_fanbox_schedule', encodeURIComponent(schedule), this.config.cookieExpireDays);
 
-			// Update display
+			// Update display in shipping method list
 			$('#hgezlpfcr-pro-fanbox-details').html(name);
 
 			// Update shipping section with FANBox info
-			this.updateShippingWithFanboxInfo(name, fullAddress, description);
+			this.updateShippingWithFanboxInfo(name, fullAddress, description, schedule);
 
 			// Trigger checkout update to save selection
 			$('body').trigger('update_checkout');
@@ -595,6 +603,9 @@
 		clearCookies: function() {
 			this.setCookie(this.config.cookieNameFanbox, '', -1);
 			this.setCookie(this.config.cookieNameAddress, '', -1);
+			this.setCookie('hgezlpfcr_pro_fanbox_full_address', '', -1);
+			this.setCookie('hgezlpfcr_pro_fanbox_description', '', -1);
+			this.setCookie('hgezlpfcr_pro_fanbox_schedule', '', -1);
 		},
 
 		/**
