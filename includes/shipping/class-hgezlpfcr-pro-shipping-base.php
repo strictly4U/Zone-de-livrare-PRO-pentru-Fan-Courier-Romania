@@ -187,17 +187,27 @@ abstract class HGEZLPFCR_Pro_Shipping_Base extends WC_Shipping_Method {
     }
 
     /**
-     * Remove diacritics from string
+     * Remove diacritics from string (preserves case)
      */
     protected function remove_diacritics($str) {
-        $transliterator = null;
         if (function_exists('transliterator_transliterate')) {
-            return transliterator_transliterate('Any-Latin; Latin-ASCII; Lower()', $str);
+            return transliterator_transliterate('Any-Latin; Latin-ASCII', $str);
         }
         // Fallback: simple replacement
         $search = ['ă', 'â', 'î', 'ș', 'ț', 'Ă', 'Â', 'Î', 'Ș', 'Ț', 'ş', 'ţ', 'Ş', 'Ţ'];
         $replace = ['a', 'a', 'i', 's', 't', 'A', 'A', 'I', 'S', 'T', 's', 't', 'S', 'T'];
         return str_replace($search, $replace, $str);
+    }
+
+    /**
+     * Capitalize location name for API compatibility
+     * API expects "Botosani" not "botosani" or "BOTOSANI"
+     */
+    protected function capitalize_location($str) {
+        // First remove diacritics (preserves case)
+        $str = $this->remove_diacritics($str);
+        // Then capitalize first letter of each word, lowercase the rest
+        return mb_convert_case($str, MB_CASE_TITLE, 'UTF-8');
     }
 
     /**

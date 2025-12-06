@@ -151,9 +151,11 @@ class HGEZLPFCR_Pro_API {
                 'Authorization' => 'Bearer ' . $token,
                 'Content-Type' => 'application/x-www-form-urlencoded',
                 'Accept' => 'application/json',
+                'User-Agent' => 'WooFanCourier-PRO/' . HGEZLPFCR_PRO_VERSION . '; ' . home_url(),
             ],
             'body' => http_build_query($body),
             'sslverify' => false,
+            'redirection' => 1,
         ];
 
         $response = wp_remote_post($endpoint, $args);
@@ -188,70 +190,137 @@ class HGEZLPFCR_Pro_API {
     }
 
     /**
-     * Get authentication token from base plugin
+     * Get authentication token from base plugin or generate our own
      */
     private static function get_auth_token() {
-        // Try to use base plugin's API client if available
-        if (class_exists('HGEZLPFCR_API_Client')) {
-            $api = new HGEZLPFCR_API_Client();
-            if (method_exists($api, 'get_token')) {
-                return $api->get_token();
+        // Try to use base plugin's FC_API_Client token first (it's already working)
+        if (class_exists('FC_API_Client')) {
+            // FC_API_Client uses the same option names
+            $cached_token = get_option('fc_api_token', null);
+            $cached_expires = get_option('fc_api_token_expires', null);
+
+            if ($cached_token && $cached_expires) {
+                $expires_time = strtotime($cached_expires);
+                if ($expires_time && $expires_time > (time() + 300)) { // 5 minutes buffer
+                    if (class_exists('HGEZLPFCR_Logger')) {
+                        HGEZLPFCR_Logger::log('[PRO API] Using cached token from Standard plugin');
+                    }
+                    return $cached_token;
+                }
+            }
+
+            // Try to get fresh token via Standard plugin's API client
+            try {
+                $api = new FC_API_Client();
+                // Force token refresh by making a simple request
+                $reflection = new ReflectionClass($api);
+                if ($reflection->hasMethod('get_auth_token')) {
+                    $method = $reflection->getMethod('get_auth_token');
+                    $method->setAccessible(true);
+                    $token = $method->invoke($api);
+                    if ($token && !is_wp_error($token)) {
+                        if (class_exists('HGEZLPFCR_Logger')) {
+                            HGEZLPFCR_Logger::log('[PRO API] Got fresh token from Standard plugin');
+                        }
+                        return $token;
+                    }
+                }
+            } catch (Exception $e) {
+                if (class_exists('HGEZLPFCR_Logger')) {
+                    HGEZLPFCR_Logger::log('[PRO API] Could not get token from Standard plugin', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
         }
 
-        // Fallback: get token ourselves
+        // Fallback: Check for our own cached token
+        $cached_token = get_option('fc_api_token', null);
+        $cached_expires = get_option('fc_api_token_expires', null);
+
+        if ($cached_token && $cached_expires) {
+            $expires_time = strtotime($cached_expires);
+            if ($expires_time && $expires_time > (time() + 300)) { // 5 minutes buffer
+                return $cached_token;
+            }
+        }
+
+        // Generate new token ourselves
         return self::authenticate();
     }
 
     /**
-     * Authenticate with FAN Courier API
+     * Authenticate with FAN Courier eCommerce API
+     * Uses domain-based authentication like the standard plugin
      */
     private static function authenticate() {
-        // Get credentials from base plugin settings
-        if (!class_exists('HGEZLPFCR_Settings')) {
-            return new WP_Error('fc_auth_error', 'Base plugin settings not available');
+        if (class_exists('HGEZLPFCR_Logger')) {
+            HGEZLPFCR_Logger::log('[PRO API] Generating new eCommerce API token');
         }
 
-        $client = HGEZLPFCR_Settings::get('hgezlpfcr_client', '');
-        $user = HGEZLPFCR_Settings::get('hgezlpfcr_user', '');
-        $password = HGEZLPFCR_Settings::get('hgezlpfcr_pass', '');
-
-        if (empty($client) || empty($user) || empty($password)) {
-            return new WP_Error('fc_auth_error', 'FAN Courier credentials not configured');
-        }
-
-        // Check for cached token
-        $cached_token = get_transient('hgezlpfcr_pro_api_token');
-        if ($cached_token) {
-            return $cached_token;
-        }
-
-        // Get new token
+        // eCommerce API uses domain-based authentication
         $endpoint = 'https://ecommerce.fancourier.ro/authShop';
+        $domain = site_url();
+
         $response = wp_remote_post($endpoint, [
             'timeout' => 30,
-            'headers' => ['Content-Type' => 'application/json'],
-            'body' => json_encode([
-                'clientId' => $client,
-                'userAccount' => $user,
-                'password' => $password,
-            ]),
+            'headers' => [
+                'Content-Type' => 'application/x-www-form-urlencoded',
+                'User-Agent' => 'WooFanCourier-PRO/' . HGEZLPFCR_PRO_VERSION . '; ' . home_url(),
+            ],
+            'body' => http_build_query(['domain' => $domain]),
             'sslverify' => false,
         ]);
 
         if (is_wp_error($response)) {
+            if (class_exists('HGEZLPFCR_Logger')) {
+                HGEZLPFCR_Logger::log('[PRO API] Token generation failed', [
+                    'error' => $response->get_error_message()
+                ]);
+            }
             return $response;
         }
 
+        $code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
-        if (isset($data['token'])) {
-            // Cache token for 23 hours (tokens usually expire in 24h)
-            set_transient('hgezlpfcr_pro_api_token', $data['token'], 23 * HOUR_IN_SECONDS);
-            return $data['token'];
+        if (class_exists('HGEZLPFCR_Logger')) {
+            HGEZLPFCR_Logger::log('[PRO API] Token generation response', [
+                'code' => $code,
+                'domain' => $domain,
+                'response' => $data
+            ]);
         }
 
-        return new WP_Error('fc_auth_error', 'Failed to get authentication token');
+        if ($code === 200 && isset($data['token'])) {
+            $token = $data['token'];
+
+            // Save token with 24 hour expiration
+            $expires_at = gmdate('Y-m-d H:i:s', time() + (24 * 3600));
+            update_option('fc_api_token', $token);
+            update_option('fc_api_token_expires', $expires_at);
+
+            if (class_exists('HGEZLPFCR_Logger')) {
+                HGEZLPFCR_Logger::log('[PRO API] Token saved', [
+                    'token' => substr($token, 0, 10) . '...',
+                    'expires_at' => $expires_at
+                ]);
+            }
+
+            return $token;
+        }
+
+        if (class_exists('HGEZLPFCR_Logger')) {
+            HGEZLPFCR_Logger::log('[PRO API] Token generation failed - invalid response', [
+                'code' => $code,
+                'response' => $data
+            ]);
+        }
+
+        return new WP_Error('fc_auth_error', 'Failed to get authentication token', [
+            'code' => $code,
+            'response' => $data
+        ]);
     }
 }

@@ -30,6 +30,16 @@
 		selectedPickupPoint: null,
 
 		/**
+		 * Flag to prevent infinite update loops
+		 */
+		isPopulatingFields: false,
+
+		/**
+		 * Last populated FANBox name (to avoid re-populating same data)
+		 */
+		lastPopulatedFanbox: null,
+
+		/**
 		 * Initialize
 		 */
 		init: function() {
@@ -99,15 +109,23 @@
 			var selectedMethod = this.getSelectedShippingMethod();
 			var isFanboxMethod = selectedMethod && selectedMethod.indexOf(this.config.methodId) !== -1;
 
+			// Also check if we have FANBox data in cookies (user selected FANBox previously)
+			var hasFanboxCookie = this.getCookie(this.config.cookieNameFanbox) ? true : false;
+
 			console.log('[FANBox] Shipping method check:', {
 				selected: selectedMethod,
-				isFanbox: isFanboxMethod
+				isFanbox: isFanboxMethod,
+				hasCookie: hasFanboxCookie
 			});
 
 			if (isFanboxMethod) {
 				this.showFanboxSelector();
 				this.updateShippingDestination();
 				this.hideShippingAddressFields();
+			} else if (!selectedMethod && hasFanboxCookie) {
+				// No method selected yet but we have FANBox cookie - wait for WooCommerce to load
+				// Don't clear cookies or show shipping fields yet
+				console.log('[FANBox] Waiting for shipping methods to load (have FANBox cookie)');
 			} else {
 				this.hideFanboxSelector();
 				this.showShippingAddressFields();
@@ -183,7 +201,13 @@
 		 */
 		hideFanboxSelector: function() {
 			$('.hgezlpfcr-pro-fanbox-row, .hgezlpfcr-pro-fanbox-li').remove();
-			this.clearCookies();
+			// Only clear cookies if user explicitly selected a different shipping method
+			// (i.e., there IS a selected method and it's not FANBox)
+			var selectedMethod = this.getSelectedShippingMethod();
+			if (selectedMethod && selectedMethod.indexOf(this.config.methodId) === -1) {
+				this.clearCookies();
+				this.lastPopulatedFanbox = null;
+			}
 		},
 
 		/**
@@ -192,33 +216,46 @@
 		hideShippingAddressFields: function() {
 			var self = this;
 
-			// Wait a bit for the page to stabilize
-			setTimeout(function() {
-				// Get saved FANBox data from cookies
-				var fanboxName = self.getCookie(self.config.cookieNameFanbox);
-				var fanboxFullAddress = self.getCookie('hgezlpfcr_pro_fanbox_full_address');
-				var fanboxDescription = self.getCookie('hgezlpfcr_pro_fanbox_description');
-				var fanboxSchedule = self.getCookie('hgezlpfcr_pro_fanbox_schedule');
+			// Prevent running if we're already populating fields (prevents infinite loop)
+			if (this.isPopulatingFields) {
+				console.log('[FANBox] Skipping hideShippingAddressFields - already populating');
+				return;
+			}
 
-				// Decode values
-				fanboxName = fanboxName ? decodeURIComponent(fanboxName) : '';
-				fanboxFullAddress = fanboxFullAddress ? decodeURIComponent(fanboxFullAddress) : '';
-				fanboxDescription = fanboxDescription ? decodeURIComponent(fanboxDescription) : '';
-				fanboxSchedule = fanboxSchedule ? decodeURIComponent(fanboxSchedule) : '';
+			// Get saved FANBox data from cookies
+			var fanboxName = this.getCookie(this.config.cookieNameFanbox);
+			var fanboxFullAddress = this.getCookie('hgezlpfcr_pro_fanbox_full_address');
+			var fanboxDescription = this.getCookie('hgezlpfcr_pro_fanbox_description');
+			var fanboxSchedule = this.getCookie('hgezlpfcr_pro_fanbox_schedule');
 
-				console.log('[FANBox] hideShippingAddressFields with cookies:', {
-					name: fanboxName,
-					address: fanboxFullAddress
-				});
+			// Decode values
+			fanboxName = fanboxName ? decodeURIComponent(fanboxName) : '';
+			fanboxFullAddress = fanboxFullAddress ? decodeURIComponent(fanboxFullAddress) : '';
+			fanboxDescription = fanboxDescription ? decodeURIComponent(fanboxDescription) : '';
+			fanboxSchedule = fanboxSchedule ? decodeURIComponent(fanboxSchedule) : '';
 
-				// Remove any existing container
-				$('#hgezlpfcr-fanbox-shipping-info').remove();
+			// Check if container already exists with same data - avoid unnecessary updates
+			var $existingContainer = $('#hgezlpfcr-fanbox-shipping-info');
+			if ($existingContainer.length && this.lastPopulatedFanbox === fanboxName) {
+				console.log('[FANBox] Skipping hideShippingAddressFields - same FANBox already displayed');
+				return;
+			}
 
-				// Create the info container
-				self.createFanboxInfoContainer(fanboxName, fanboxFullAddress, fanboxDescription, fanboxSchedule);
+			console.log('[FANBox] hideShippingAddressFields with cookies:', {
+				name: fanboxName,
+				address: fanboxFullAddress
+			});
 
-				console.log('[FANBox] Shipping section updated with FANBox info');
-			}, 150);
+			// Remove any existing container
+			$existingContainer.remove();
+
+			// Create the info container (this will also populate fields)
+			this.createFanboxInfoContainer(fanboxName, fanboxFullAddress, fanboxDescription, fanboxSchedule);
+
+			// Remember what we populated
+			this.lastPopulatedFanbox = fanboxName;
+
+			console.log('[FANBox] Shipping section updated with FANBox info');
 		},
 
 		/**
@@ -261,6 +298,9 @@
 
 			// Show shipping fields
 			$('.woocommerce-shipping-fields__field-wrapper').removeClass('hgezlpfcr-hidden-for-fanbox').show();
+
+			// Clear the FANBox-specific shipping field values
+			this.clearShippingFields();
 
 			console.log('[FANBox] Shipping address fields restored');
 		},
@@ -570,16 +610,26 @@
 			// Remove old container and create new one with fresh data
 			$('#hgezlpfcr-fanbox-shipping-info').remove();
 
+			// Reset lastPopulatedFanbox to force update with new selection
+			this.lastPopulatedFanbox = null;
+
 			// Create/update the FANBox info container
 			this.createFanboxInfoContainer(name, fullAddress, description, schedule);
+
+			// Remember what we populated
+			this.lastPopulatedFanbox = name;
 
 			// Update shipping destination text
 			this.updateShippingDestination();
 
-			// Trigger checkout update with a delay to avoid race conditions
+			// Trigger checkout update to recalculate dynamic pricing with new FANBox location
+			// Set flag to prevent infinite loop - the update_checkout will call checkShippingMethod
+			// but since lastPopulatedFanbox is set, it will skip re-creating the container
+			var self = this;
 			setTimeout(function() {
+				console.log('[FANBox] Triggering checkout update for dynamic pricing recalculation');
 				$('body').trigger('update_checkout');
-			}, 500);
+			}, 100);
 		},
 
 		/**
@@ -588,12 +638,6 @@
 		createFanboxInfoContainer: function(name, fullAddress, description, schedule) {
 			var self = this;
 
-			// Check "Ship to different address" checkbox
-			var $checkbox = $('#ship-to-different-address-checkbox');
-			if ($checkbox.length && !$checkbox.is(':checked')) {
-				$checkbox.prop('checked', true).trigger('change');
-			}
-
 			// Build info HTML
 			var infoHtml = '<div id="hgezlpfcr-fanbox-shipping-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 6px; margin-top: 15px;">';
 			infoHtml += '<h4 style="margin: 0 0 15px 0; color: #155724;">📦 Livrare la FANBox</h4>';
@@ -601,10 +645,15 @@
 			if (name) {
 				infoHtml += '<p style="margin: 0 0 10px 0;"><strong style="font-size: 16px;">' + name + '</strong></p>';
 				if (fullAddress) {
-					infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + fullAddress + '</p>';
+					// Remove description from fullAddress if it's at the end
+					var displayAddress = fullAddress;
+					if (description && fullAddress.indexOf(description) !== -1) {
+						displayAddress = fullAddress.substring(0, fullAddress.indexOf(description)).replace(/,\s*$/, '');
+					}
+					infoHtml += '<p style="margin: 0 0 5px 0; color: #666;"><strong>Adresă:</strong> ' + displayAddress + '</p>';
 				}
 				if (description) {
-					infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' + description + '</p>';
+					infoHtml += '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">📍 ' + description + '</p>';
 				}
 				if (schedule) {
 					infoHtml += '<p style="margin: 0 0 15px 0; color: #155724;"><strong>Program:</strong> ' + schedule + '</p>';
@@ -617,19 +666,29 @@
 
 			infoHtml += '</div>';
 
-			// Hide original shipping address fields
-			var $shippingWrapper = $('.woocommerce-shipping-fields__field-wrapper');
-			if ($shippingWrapper.length) {
-				$shippingWrapper.addClass('hgezlpfcr-hidden-for-fanbox').hide();
-				$shippingWrapper.after(infoHtml);
-			} else if ($('.woocommerce-shipping-fields').length) {
-				$('.woocommerce-shipping-fields').append(infoHtml);
-			} else if ($('#ship-to-different-address').length) {
-				$('#ship-to-different-address').after(infoHtml);
+			// Find where to insert the FANBox info
+			// We insert it AFTER the "ship to different address" section, NOT inside shipping fields
+			var $existingInfo = $('#hgezlpfcr-fanbox-shipping-info');
+			if ($existingInfo.length) {
+				$existingInfo.replaceWith(infoHtml);
 			} else {
-				// Fallback: append to checkout form
-				$('.woocommerce-checkout').append(infoHtml);
+				// Insert after the ship-to-different-address checkbox area
+				var $shipToDifferent = $('#ship-to-different-address');
+				if ($shipToDifferent.length) {
+					$shipToDifferent.after(infoHtml);
+				} else if ($('.woocommerce-shipping-fields').length) {
+					$('.woocommerce-shipping-fields').prepend(infoHtml);
+				} else {
+					// Fallback: after billing details
+					$('.woocommerce-billing-fields').after(infoHtml);
+				}
 			}
+
+			// Hide the shipping address fields wrapper (but keep the section visible for our info)
+			$('.woocommerce-shipping-fields__field-wrapper').addClass('hgezlpfcr-hidden-for-fanbox').hide();
+
+			// Populate hidden shipping fields with FANBox data to pass WooCommerce validation
+			this.populateShippingFields(name, fullAddress, description, schedule);
 
 			// Bind button click handlers using event delegation
 			$(document).off('click.fanbox', '#hgezlpfcr-change-fanbox-btn, #hgezlpfcr-select-fanbox-btn');
@@ -639,6 +698,157 @@
 			});
 
 			console.log('[FANBox] Info container created with data:', { name: name, fullAddress: fullAddress });
+		},
+
+		/**
+		 * Populate shipping fields with FANBox data to pass WooCommerce validation
+		 * Fields are hidden but need values for checkout to proceed
+		 *
+		 * We keep it minimal to avoid duplicate info in order-received page:
+		 * - Company: FANBox name (main identifier)
+		 * - Address 1: Street address only
+		 * - City, State, Postcode: From FANBox address
+		 * - Address 2: Empty (description is stored in order meta, not here)
+		 */
+		populateShippingFields: function(name, fullAddress, description, schedule) {
+			var self = this;
+
+			// Set flag to prevent infinite loops
+			this.isPopulatingFields = true;
+
+			// Parse address parts from fullAddress
+			// Format: "County, City, Street, Number, PostalCode, Description"
+			var county = '';
+			var city = '';
+			var street = '';
+			var postcode = '';
+
+			if (fullAddress && fullAddress.length > 0) {
+				var parts = fullAddress.split(',').map(function(s) { return s.trim(); });
+				if (parts.length >= 1) county = parts[0];
+				if (parts.length >= 2) city = parts[1];
+				if (parts.length >= 3) street = parts[2];
+				if (parts.length >= 4) street += ' ' + parts[3]; // Add number to street
+				if (parts.length >= 5) postcode = parts[4];
+				// parts[5] would be description - we skip it for address fields
+			}
+
+			// Build address line - just street, no full address dump
+			var addressLine = street || 'Locker FANBox';
+
+			// Get the county code from our map (reverse lookup)
+			var countyCode = this.getCountyCode(county);
+
+			console.log('[FANBox] Populating shipping fields:', {
+				county: county,
+				countyCode: countyCode,
+				city: city,
+				street: street,
+				postcode: postcode,
+				addressLine: addressLine
+			});
+
+			// Copy first name and last name from billing if shipping is empty
+			var billingFirstName = $('#billing_first_name').val() || '';
+			var billingLastName = $('#billing_last_name').val() || '';
+
+			// Set shipping field values WITHOUT triggering change events (to prevent loops)
+			// Keep it clean - FANBox name in company, street in address_1, nothing in address_2
+			$('#shipping_first_name').val(billingFirstName);
+			$('#shipping_last_name').val(billingLastName);
+			$('#shipping_company').val(name); // Just the FANBox name, no prefix
+			$('#shipping_address_1').val(addressLine);
+			$('#shipping_address_2').val(''); // Don't duplicate description here
+			$('#shipping_postcode').val(postcode || '');
+			$('#shipping_country').val('RO');
+
+			// Handle state/county - might be a select or input
+			// Do NOT trigger change to avoid checkout update loop
+			var $stateField = $('#shipping_state');
+			if ($stateField.length) {
+				if ($stateField.is('select')) {
+					// It's a dropdown - set the code
+					if (countyCode) {
+						$stateField.val(countyCode);
+					} else {
+						// Try to find by text
+						$stateField.find('option').each(function() {
+							if ($(this).text().toLowerCase().indexOf(county.toLowerCase()) !== -1) {
+								$stateField.val($(this).val());
+								return false;
+							}
+						});
+					}
+				} else {
+					// It's a text input
+					$stateField.val(county || 'Bucuresti');
+				}
+			}
+
+			// Handle city field - might be a select (wc-city-select plugin) or input
+			// Do NOT trigger change to avoid checkout update loop
+			var $cityField = $('#shipping_city');
+			if ($cityField.is('select')) {
+				// Try to set by value or find matching option
+				var citySet = false;
+				$cityField.find('option').each(function() {
+					if ($(this).text().toLowerCase() === city.toLowerCase() ||
+						$(this).val().toLowerCase() === city.toLowerCase()) {
+						$cityField.val($(this).val());
+						citySet = true;
+						return false;
+					}
+				});
+				// If not found, try to add as custom value or set first option
+				if (!citySet && $cityField.find('option').length > 1) {
+					$cityField.val($cityField.find('option:eq(1)').val());
+				}
+			} else {
+				$cityField.val(city || '');
+			}
+
+			// Mark that we've populated FANBox data
+			$('form.checkout').addClass('hgezlpfcr-fanbox-shipping');
+
+			console.log('[FANBox] Shipping fields populated');
+
+			// Reset flag after a short delay to allow any triggered events to complete
+			setTimeout(function() {
+				self.isPopulatingFields = false;
+			}, 500);
+		},
+
+		/**
+		 * Get county code from county name (reverse lookup)
+		 */
+		getCountyCode: function(countyName) {
+			if (!countyName) return '';
+
+			var normalizedName = this.removeDiacritics(countyName).toLowerCase();
+
+			for (var code in this.countyMap) {
+				if (this.countyMap[code].toLowerCase() === normalizedName) {
+					return code;
+				}
+			}
+
+			// Special case for Bucuresti variations
+			if (normalizedName === 'bucuresti' || normalizedName === 'bucharest') {
+				return 'B';
+			}
+
+			return '';
+		},
+
+		/**
+		 * Clear shipping fields when FANBox is deselected
+		 */
+		clearShippingFields: function() {
+			$('#shipping_company').val('');
+			$('#shipping_address_1').val('');
+			$('#shipping_address_2').val('');
+			$('form.checkout').removeClass('hgezlpfcr-fanbox-shipping');
+			console.log('[FANBox] Shipping fields cleared');
 		},
 
 		/**

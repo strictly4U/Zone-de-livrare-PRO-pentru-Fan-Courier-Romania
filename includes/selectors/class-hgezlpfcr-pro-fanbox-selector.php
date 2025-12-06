@@ -32,8 +32,90 @@ class HGEZLPFCR_Pro_Fanbox_Selector {
 		add_action('woocommerce_checkout_process', ['HGEZLPFCR_Pro_Shipping_Fanbox', 'validate_fanbox_selection'], 10);
 		add_action('woocommerce_store_api_checkout_update_order_meta', ['HGEZLPFCR_Pro_Shipping_Fanbox', 'validate_fanbox_selection'], 10);
 
+		// Make shipping fields optional when FANBox is selected
+		add_filter('woocommerce_checkout_fields', [__CLASS__, 'modify_shipping_fields_for_fanbox'], 100);
+
 		// Enqueue scripts and styles
 		add_action('wp_enqueue_scripts', [__CLASS__, 'enqueue_assets'], 20);
+	}
+
+	/**
+	 * Modify shipping fields to be optional when FANBox shipping is selected
+	 * The JavaScript will populate these fields with FANBox data
+	 *
+	 * @param array $fields Checkout fields
+	 * @return array Modified fields
+	 */
+	public static function modify_shipping_fields_for_fanbox($fields) {
+		// Check if FANBox is the selected shipping method
+		if (!self::is_fanbox_shipping_selected()) {
+			return $fields;
+		}
+
+		// List of shipping fields that should be optional for FANBox
+		$optional_fields = [
+			'shipping_address_1',
+			'shipping_address_2',
+			'shipping_city',
+			'shipping_state',
+			'shipping_postcode',
+		];
+
+		foreach ($optional_fields as $field_key) {
+			if (isset($fields['shipping'][$field_key])) {
+				$fields['shipping'][$field_key]['required'] = false;
+				// Add a class to identify FANBox-modified fields
+				if (!isset($fields['shipping'][$field_key]['class'])) {
+					$fields['shipping'][$field_key]['class'] = [];
+				}
+				$fields['shipping'][$field_key]['class'][] = 'hgezlpfcr-fanbox-optional';
+			}
+		}
+
+		if (class_exists('HGEZLPFCR_Logger')) {
+			HGEZLPFCR_Logger::log('FANBox: Shipping fields made optional', [
+				'fields' => $optional_fields,
+			]);
+		}
+
+		return $fields;
+	}
+
+	/**
+	 * Check if FANBox shipping method is currently selected
+	 *
+	 * @return bool
+	 */
+	public static function is_fanbox_shipping_selected() {
+		// Check WooCommerce session for chosen shipping method
+		if (WC()->session) {
+			$chosen_methods = WC()->session->get('chosen_shipping_methods');
+			if (!empty($chosen_methods) && is_array($chosen_methods)) {
+				foreach ($chosen_methods as $method) {
+					if (strpos($method, 'fc_pro_fanbox') !== false) {
+						return true;
+					}
+				}
+			}
+		}
+
+		// Also check POST data during checkout submission
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified by WooCommerce
+		if (isset($_POST['shipping_method']) && is_array($_POST['shipping_method'])) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			foreach ($_POST['shipping_method'] as $method) {
+				if (strpos(sanitize_text_field(wp_unslash($method)), 'fc_pro_fanbox') !== false) {
+					return true;
+				}
+			}
+		}
+
+		// Check cookie as fallback (set by JavaScript when FANBox is selected)
+		if (isset($_COOKIE['hgezlpfcr_pro_fanbox_name']) && !empty($_COOKIE['hgezlpfcr_pro_fanbox_name'])) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**

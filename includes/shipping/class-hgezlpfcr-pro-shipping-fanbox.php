@@ -97,6 +97,23 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 			return false;
 		}
 
+		// Check if FANBox was marked as unavailable due to API error (cached check)
+		// This is set by calculate_shipping when API fails
+		$cache_key = 'hgezlpfcr_fanbox_api_status';
+		$api_status = get_transient($cache_key);
+
+		if ($api_status === 'unavailable') {
+			// Check if enough time has passed to retry (5 minutes)
+			$last_check = get_transient('hgezlpfcr_fanbox_last_check');
+			if ($last_check && (time() - $last_check) < 300) {
+				// Still in cooldown, show as unavailable
+				$this->show_unavailable_notice();
+				return false;
+			}
+			// Cooldown passed, delete transient to allow retry
+			delete_transient($cache_key);
+		}
+
 		// FANBox is available nationwide in Romania
 		// No specific geographic restrictions needed
 		// The map selector will show available FANBox locations based on user's city
@@ -105,22 +122,246 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 	}
 
 	/**
+	 * Show notice when FANBox is unavailable
+	 */
+	protected function show_unavailable_notice() {
+		if (WC()->session && !WC()->session->get('hgezlpfcr_fanbox_notice_shown')) {
+			wc_add_notice(
+				__('Serviciul FANBox este temporar indisponibil. Vă rugăm să alegeți o altă metodă de livrare.', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro'),
+				'notice'
+			);
+			WC()->session->set('hgezlpfcr_fanbox_notice_shown', true);
+		}
+	}
+
+	/**
 	 * Calculate shipping cost for FANBox
-	 * Uses parent implementation but can be overridden if needed
+	 * Override parent to use FANBox location instead of customer address for dynamic pricing
 	 *
 	 * @param array $package Package array
 	 */
 	public function calculate_shipping($package = []) {
-		// Use parent calculation (handles dynamic pricing, free shipping, COD)
-		parent::calculate_shipping($package);
+		// Check license first
+		if (!class_exists('HGEZLPFCR_Pro_License_Manager') || !HGEZLPFCR_Pro_License_Manager::is_license_active()) {
+			return;
+		}
+
+		// Check weight limit (FANBox max 20kg)
+		$package_weight = $this->calculate_package_weight($package);
+		$max_allowed = (float) $this->get_instance_option('max_weight', $this->max_weight);
+		if ($max_allowed > 0 && $package_weight > $max_allowed) {
+			$this->log('Package weight exceeds FANBox limit', [
+				'package_weight' => $package_weight,
+				'max_allowed' => $max_allowed
+			]);
+			return;
+		}
+
+		$enable_dynamic = $this->get_instance_option('enable_dynamic_pricing', 'yes') === 'yes';
+
+		// Check for free shipping first
+		$free_shipping_min = (float) $this->get_instance_option('free_shipping_min', 0);
+		$cart_total = WC()->cart ? WC()->cart->get_cart_contents_total() : 0;
+
+		if ($free_shipping_min > 0 && $cart_total >= $free_shipping_min) {
+			$cost = 0;
+		} elseif ($enable_dynamic) {
+			// Calculate dynamic pricing using FANBox location
+			$cost = $this->get_fanbox_dynamic_cost($package);
+			// If dynamic pricing fails, fallback to fixed cost
+			if ($cost <= 0) {
+				$cost = $this->get_location_based_cost($package);
+			}
+		} else {
+			// Calculate location-based fixed cost
+			$cost = $this->get_location_based_cost($package);
+		}
 
 		// Log FANBox-specific calculation
 		if (class_exists('HGEZLPFCR_Logger')) {
 			HGEZLPFCR_Logger::log('FANBox shipping calculated', [
 				'method' => 'fc_pro_fanbox',
 				'service_id' => $this->service_id,
+				'enable_dynamic' => $enable_dynamic,
+				'calculated_cost' => $cost,
 				'destination' => $package['destination'] ?? [],
 			]);
+		}
+
+		$this->add_rate([
+			'id'    => $this->get_rate_id(),
+			'label' => $this->title,
+			'cost'  => max(0, $cost),
+			'meta_data' => [
+				'service_name' => $this->service_name,
+				'service_type_id' => $this->service_type_id,
+				'dynamic_pricing' => $enable_dynamic && $cost > 0 ? 'yes' : 'no'
+			],
+		]);
+	}
+
+	/**
+	 * Get dynamic cost for FANBox using FANBox location from cookie
+	 * Instead of customer address, we use the selected FANBox location
+	 *
+	 * @param array $package Package array
+	 * @return float Cost or 0 on failure
+	 */
+	protected function get_fanbox_dynamic_cost($package) {
+		try {
+			if (!class_exists('HGEZLPFCR_Pro_API')) {
+				$this->log('PRO API class not available for FANBox');
+				return 0;
+			}
+
+			// Log all FANBox cookies for debugging
+			$this->log('FANBox cookies raw', [
+				'address_cookie' => isset($_COOKIE['hgezlpfcr_pro_fanbox_address']) ? $_COOKIE['hgezlpfcr_pro_fanbox_address'] : 'NOT SET',
+				'full_address_cookie' => isset($_COOKIE['hgezlpfcr_pro_fanbox_full_address']) ? $_COOKIE['hgezlpfcr_pro_fanbox_full_address'] : 'NOT SET',
+				'name_cookie' => isset($_COOKIE['hgezlpfcr_pro_fanbox_name']) ? $_COOKIE['hgezlpfcr_pro_fanbox_name'] : 'NOT SET',
+			]);
+
+			// Get FANBox location from cookie (set by JavaScript when user selects FANBox)
+			// Cookie format: "County|Locality" (e.g., "Bucuresti|Bucuresti")
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$fanbox_address_raw = isset($_COOKIE['hgezlpfcr_pro_fanbox_address']) ? wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_address']) : '';
+			$fanbox_address = urldecode($fanbox_address_raw);
+
+			// Also try full address cookie for more details
+			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$fanbox_full_address_raw = isset($_COOKIE['hgezlpfcr_pro_fanbox_full_address']) ? wp_unslash($_COOKIE['hgezlpfcr_pro_fanbox_full_address']) : '';
+			$fanbox_full_address = urldecode($fanbox_full_address_raw);
+
+			$this->log('FANBox cookies decoded', [
+				'address' => $fanbox_address,
+				'full_address' => $fanbox_full_address,
+			]);
+
+			$county = '';
+			$locality = '';
+
+			// Parse FANBox address cookie (format: "County|Locality")
+			if (!empty($fanbox_address) && strpos($fanbox_address, '|') !== false) {
+				$parts = explode('|', $fanbox_address);
+				$county = isset($parts[0]) ? sanitize_text_field($parts[0]) : '';
+				$locality = isset($parts[1]) ? sanitize_text_field($parts[1]) : '';
+			}
+
+			// If address cookie didn't work, try parsing full address
+			// Format: "County, City, Street, Number, PostalCode, Description"
+			if ((empty($county) || empty($locality)) && !empty($fanbox_full_address)) {
+				$parts = array_map('trim', explode(',', $fanbox_full_address));
+				if (count($parts) >= 2) {
+					$county = sanitize_text_field($parts[0]);
+					$locality = sanitize_text_field($parts[1]);
+				}
+			}
+
+			// Fallback to customer destination if no FANBox selected yet
+			if (empty($county) || empty($locality)) {
+				$destination = $package['destination'] ?? [];
+				if (!empty($destination['city'])) {
+					$county = $this->get_county_name($destination['state'] ?? '');
+					$locality = $this->remove_diacritics($destination['city']);
+					$this->log('FANBox dynamic pricing: Using customer destination (no FANBox selected yet)', [
+						'county' => $county,
+						'locality' => $locality
+					]);
+				} else {
+					$this->log('FANBox dynamic pricing: No destination data available');
+					return 0;
+				}
+			} else {
+				// Remove diacritics for API compatibility
+				$county = $this->remove_diacritics($county);
+				$locality = $this->remove_diacritics($locality);
+				$this->log('FANBox dynamic pricing: Using FANBox location from cookie', [
+					'county' => $county,
+					'locality' => $locality,
+					'cookie_address' => $fanbox_address
+				]);
+			}
+
+			// Filter out invalid values
+			if ($county === 'undefined' || $locality === 'undefined') {
+				$this->log('FANBox dynamic pricing: Invalid cookie values detected');
+				return 0;
+			}
+
+			// Keep county and locality as-is from cookie (already capitalized from map selection)
+			// API accepts both codes (BR) and full names (Braila)
+			// Just ensure proper capitalization
+			$county = $this->capitalize_location($county);
+			$locality = $this->capitalize_location($locality);
+
+			$this->log('FANBox dynamic pricing: Final params after processing', [
+				'county' => $county,
+				'locality' => $locality,
+			]);
+
+			// Prepare params for API
+			$params = [
+				'county' => $county,
+				'locality' => $locality,
+				'weight' => $this->calculate_package_weight($package),
+				'length' => 30,
+				'width' => 20,
+				'height' => 10,
+			];
+
+			$this->log('FANBox dynamic pricing params', $params);
+
+			// FANBox is available nationwide - skip check_service and go directly to get_tariff
+			// This avoids issues where check_service might incorrectly return unavailable
+
+			// Get tariff using PRO API
+			$response = HGEZLPFCR_Pro_API::get_tariff($this->service_name, $params);
+
+			$price = 0;
+			$api_failed = false;
+
+			if (is_wp_error($response)) {
+				$this->log('FANBox API tariff calculation failed', [
+					'error' => $response->get_error_message(),
+					'error_data' => $response->get_error_data()
+				]);
+				$api_failed = true;
+			} elseif (isset($response['error']) || isset($response['message'])) {
+				$this->log('FANBox API returned error', $response);
+				$api_failed = true;
+			} else {
+				$price = isset($response['price']) ? (float) $response['price'] : 0;
+				if ($price <= 0) {
+					$this->log('FANBox API returned zero or invalid price', ['response' => $response]);
+					$api_failed = true;
+				}
+			}
+
+			// If API failed, mark FANBox as unavailable for 5 minutes
+			if ($api_failed) {
+				$this->log('FANBox service temporarily unavailable due to API error');
+				// Cache the unavailable status for 5 minutes
+				set_transient('hgezlpfcr_fanbox_api_status', 'unavailable', 300);
+				set_transient('hgezlpfcr_fanbox_last_check', time(), 300);
+				// Show notice to customer
+				$this->show_unavailable_notice();
+				return 0; // Return 0 - method will be hidden on next refresh
+			}
+
+			$this->log('FANBox dynamic price calculated successfully', ['price' => $price]);
+
+			// Clear unavailable status if API works
+			delete_transient('hgezlpfcr_fanbox_api_status');
+			delete_transient('hgezlpfcr_fanbox_last_check');
+			if (WC()->session) {
+				WC()->session->set('hgezlpfcr_fanbox_notice_shown', false);
+			}
+
+			return $price;
+
+		} catch (Exception $e) {
+			$this->log('FANBox dynamic pricing error', ['exception' => $e->getMessage()]);
+			return 0;
 		}
 	}
 
@@ -253,7 +494,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 					}
 
 					// Override shipping address with FANBox location
-					$order->set_shipping_company('FANBox: ' . $decoded_name);
+					$order->set_shipping_company($decoded_name);
 
 					if (!empty($shipping_address)) {
 						$order->set_shipping_address_1($shipping_address);
@@ -297,8 +538,16 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		$fanbox_description  = $order->get_meta('_hgezlpfcr_pro_fanbox_description');
 		$fanbox_schedule     = $order->get_meta('_hgezlpfcr_pro_fanbox_schedule');
 
-		// Use full address if available, otherwise fallback
+		// Parse address to remove description if it's included at the end
+		// Format: "County, City, Street, Number, PostalCode, Description"
 		$display_address = $fanbox_full_address ? $fanbox_full_address : $fanbox_address;
+		if ($display_address && $fanbox_description) {
+			// Remove description from address if it appears at the end
+			$desc_pos = strpos($display_address, $fanbox_description);
+			if ($desc_pos !== false) {
+				$display_address = trim(substr($display_address, 0, $desc_pos), ', ');
+			}
+		}
 
 		if ($fanbox_name) {
 			echo '<h2>' . esc_html__('Informații FANBox', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</h2>';
@@ -308,7 +557,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 				echo '<p style="margin: 0 0 5px 0;"><strong>' . esc_html__('Adresă:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong> ' . esc_html($display_address) . '</p>';
 			}
 			if ($fanbox_description) {
-				echo '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+				echo '<p style="margin: 0 0 5px 0; color: #666; font-style: italic;">📍 ' . esc_html($fanbox_description) . '</p>';
 			}
 			if ($fanbox_schedule) {
 				echo '<p style="margin: 0; color: #155724;"><strong>' . esc_html__('Program:', 'hge-zone-de-livrare-pentru-fan-courier-romania-pro') . '</strong> ' . esc_html($fanbox_schedule) . '</p>';
@@ -329,8 +578,16 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 		$fanbox_description  = $order->get_meta('_hgezlpfcr_pro_fanbox_description');
 		$fanbox_schedule     = $order->get_meta('_hgezlpfcr_pro_fanbox_schedule');
 
-		// Use full address if available, otherwise fallback
+		// Parse address to remove description if it's included at the end
+		// Format: "County, City, Street, Number, PostalCode, Description"
 		$display_address = $fanbox_full_address ? $fanbox_full_address : $fanbox_address;
+		if ($display_address && $fanbox_description) {
+			// Remove description from address if it appears at the end
+			$desc_pos = strpos($display_address, $fanbox_description);
+			if ($desc_pos !== false) {
+				$display_address = trim(substr($display_address, 0, $desc_pos), ', ');
+			}
+		}
 
 		if ($fanbox_name) {
 			echo '<div class="fc-pro-fanbox-info" style="background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 10px 0; border-radius: 6px;">';
@@ -340,7 +597,7 @@ class HGEZLPFCR_Pro_Shipping_Fanbox extends HGEZLPFCR_Pro_Shipping_Base {
 				echo '<p style="margin: 0 0 5px 0; font-size: 13px;"><strong>Adresă:</strong> ' . esc_html($display_address) . '</p>';
 			}
 			if ($fanbox_description) {
-				echo '<p style="margin: 0 0 5px 0; font-size: 12px; color: #666; font-style: italic;">' . esc_html($fanbox_description) . '</p>';
+				echo '<p style="margin: 0 0 5px 0; font-size: 12px; color: #666; font-style: italic;">📍 ' . esc_html($fanbox_description) . '</p>';
 			}
 			if ($fanbox_schedule) {
 				echo '<p style="margin: 0; font-size: 12px; color: #155724;"><strong>Program:</strong> ' . esc_html($fanbox_schedule) . '</p>';
